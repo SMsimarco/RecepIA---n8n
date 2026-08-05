@@ -22,9 +22,6 @@ Sistema de automatización WhatsApp con inteligencia artificial para cualquier n
 | **Pro** | $99 USD | Los 5 flows · mensajes ilimitados · resumen semanal · dashboard |
 
 **Setup fee:** $150 USD único (instalación y configuración inicial)
-
-**Objetivo:** 40 clientes Pro = $4.000 USD/mes recurrentes
-
 ---
 
 ## Stack técnico
