@@ -1,0 +1,124 @@
+{
+  "name": "Tool - Cancelar Turno",
+  "nodes": [
+    {
+      "id": "can-trigger",
+      "name": "Recibir Datos",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": { "inputSource": "passthrough" }
+    },
+    {
+      "id": "can-extraer",
+      "name": "Preparar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const raw = $('Recibir Datos').first().json;\nconst d = raw.telefono != null ? raw : JSON.parse(raw.query || '{}');\nconst valido = v => v != null && String(v).trim() !== '' && String(v) !== 'undefined' && String(v) !== 'null';\nif (!valido(d.telefono) || !valido(d.fecha)) {\n  throw new Error('Datos incompletos para cancelar. Necesito: telefono=' + d.telefono + ', fecha=' + d.fecha + '. Confirmá la fecha del turno a cancelar.');\n}\nconst normTel = t => { let s = String(t).replace(/\\D/g, ''); if (s.startsWith('54')) s = s.slice(2); if (s.startsWith('9') && s.length >= 10) s = s.slice(1); return s; };\nconst telefono = normTel(d.telefono);\nconst fechaHoy = new Date().toISOString().split('T')[0];\nif (d.fecha < fechaHoy) {\n  throw new Error('El turno del ' + d.fecha + ' ya pasó y no puede cancelarse. Si querés cancelar un turno futuro, decime la fecha.');\n}\nconst turno_id = telefono + '_' + d.fecha;\nreturn [{ json: { nombre: d.nombre || '', fecha: d.fecha || '', telefono, turno_id, fechaHoy } }];"
+      }
+    },
+    {
+      "id": "can-leer-turnos",
+      "name": "Leer Turnos para Cancelar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "can-verificar",
+      "name": "Verificar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const normTelFn = t => { let s = String(t).replace(/\\D/g, ''); if (s.startsWith('54')) s = s.slice(2); if (s.startsWith('9') && s.length >= 10) s = s.slice(1); return s; };\nconst preparado = $('Preparar Datos').first().json;\nconst telBuscado = preparado.telefono;\nconst fechaBuscada = preparado.fecha;\nconst busyStates = ['PENDIENTE','CONFIRMADO','RECORDATORIO_ENVIADO'];\nconst filas = $input.all();\nconst turnosActivos = filas.filter(i => {\n  if (!i.json.turno_id) return false;\n  const p = i.json.turno_id.split('_');\n  return normTelFn(p[0]) === normTelFn(telBuscado) && p[1] === fechaBuscada && busyStates.includes(i.json.estado_turno);\n});\nif (turnosActivos.length === 0) {\n  return [{ json: { ...preparado, turnoExiste: false, turno_id: preparado.turno_id } }];\n}\nif (turnosActivos.length > 1) {\n  const horas = turnosActivos.map(t => t.json.hora).join(' y ');\n  throw new Error('Hay ' + turnosActivos.length + ' turnos activos el ' + fechaBuscada + ': a las ' + horas + '. Preguntale al paciente cuál quiere cancelar e intentá de nuevo.');\n}\nreturn [{ json: { ...preparado, turnoExiste: true, turno_id: turnosActivos[0].json.turno_id } }];"
+      }
+    },
+    {
+      "id": "can-cancelar-turnos",
+      "name": "Cancelar en Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1120, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $json.turno_id }}",
+            "estado_turno": "CANCELADO"
+          },
+          "matchingColumns": ["turno_id"],
+          "schema": [
+            { "id": "turno_id", "displayName": "turno_id", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado_turno", "displayName": "estado_turno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "can-actualizar-paciente",
+      "name": "Actualizar Paciente Cancelado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1340, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Pacientes", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Preparar Datos').first().json.telefono }}",
+            "estado": "CANCELADO",
+            "fechaUltimoContacto": "={{ $('Preparar Datos').first().json.fechaHoy }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado", "displayName": "estado", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "fechaUltimoContacto", "displayName": "fechaUltimoContacto", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "can-respuesta",
+      "name": "Construir Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "parameters": {
+        "jsCode": "const d = $('Verificar Turno').first().json;\nconst resultado = d.turnoExiste\n  ? 'El turno de ' + d.nombre + ' para el ' + d.fecha + ' fue cancelado correctamente. ¿Querés que te busque otro día?'\n  : 'No encontré un turno registrado para ' + d.nombre + ' el ' + d.fecha + '. ¿Podés verificar la fecha?';\nreturn [{ json: { resultado } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Recibir Datos": { "main": [[{ "node": "Preparar Datos", "type": "main", "index": 0 }]] },
+    "Preparar Datos": { "main": [[{ "node": "Leer Turnos para Cancelar", "type": "main", "index": 0 }]] },
+    "Leer Turnos para Cancelar": { "main": [[{ "node": "Verificar Turno", "type": "main", "index": 0 }]] },
+    "Verificar Turno": { "main": [[{ "node": "Cancelar en Turnos", "type": "main", "index": 0 }]] },
+    "Cancelar en Turnos": { "main": [[{ "node": "Actualizar Paciente Cancelado", "type": "main", "index": 0 }]] },
+    "Actualizar Paciente Cancelado": { "main": [[{ "node": "Construir Respuesta", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

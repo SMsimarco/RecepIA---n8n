@@ -1,0 +1,303 @@
+{
+  "name": "Flow 1 - Recordatorio Diario de Turno",
+  "nodes": [
+    {
+      "id": "f1-cron",
+      "name": "Cron 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f1-sheets-turnos",
+      "name": "Leer Hoja Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f1-code-filter",
+      "name": "Filtrar Turnos de Manana",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst manana = new Date();\nmanana.setDate(manana.getDate() + 1);\nconst fechaManana = manana.toISOString().split('T')[0];\n\nconst turnos = items.filter(i => {\n  const fecha = (i.json.fecha || '').trim();\n  const estado = (i.json.estado_turno || 'PENDIENTE').toUpperCase();\n  return fecha === fechaManana && estado === 'PENDIENTE';\n});\n\nif (turnos.length === 0) return [];\n\nreturn turnos.map(i => ({\n  json: {\n    turno_id: `${i.json.telefono}_${i.json.fecha}`,\n    telefono: i.json.telefono,\n    nombre: i.json.nombre || 'Paciente',\n    servicio: i.json.servicio || 'turno',\n    fecha: i.json.fecha,\n    hora: i.json.hora,\n    fechaDisplay: new Date(i.json.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }),\n    contentVariables: JSON.stringify({\n      \"1\": i.json.nombre || 'Paciente',\n      \"2\": i.json.servicio || 'turno',\n      \"3\": new Date(i.json.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }),\n      \"4\": i.json.hora,\n      \"5\": \"Centro Médico San Martín\"\n    })\n  }\n}));"
+      }
+    },
+    {
+      "id": "f1-twilio-send",
+      "name": "Enviar Recordatorio WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{ btoa($env.TWILIO_ACCOUNT_SID + ':' + $env.TWILIO_AUTH_TOKEN) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "name": "To",
+              "value": "=whatsapp:+{{ $json.telefono }}"
+            },
+            {
+              "name": "Body",
+              "value": "=Hola {{ $json.nombre }}! 👋 Te recordamos tu turno de {{ $json.servicio }} el {{ $json.fechaDisplay }} a las {{ $json.hora }}hs. ¡Te esperamos!"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f1-update-turno",
+      "name": "Actualizar Turno a RECORDATORIO_ENVIADO",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $('Filtrar Turnos de Manana').item.json.turno_id }}",
+            "estado_turno": "RECORDATORIO_ENVIADO"
+          },
+          "matchingColumns": [
+            "turno_id"
+          ],
+          "schema": [
+            {
+              "id": "turno_id",
+              "displayName": "turno_id",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_turno",
+              "displayName": "estado_turno",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f1-upsert-paciente",
+      "name": "Upsert Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Filtrar Turnos de Manana').item.json.telefono }}",
+            "nombre": "={{ $('Filtrar Turnos de Manana').item.json.nombre }}",
+            "proximoTurno": "={{ $('Filtrar Turnos de Manana').item.json.fecha + ' ' + $('Filtrar Turnos de Manana').item.json.hora }}",
+            "estado": "RECORDATORIO_ENVIADO",
+            "fechaUltimoContacto": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "telefono"
+          ],
+          "schema": [
+            {
+              "id": "telefono",
+              "displayName": "telefono",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "proximoTurno",
+              "displayName": "proximoTurno",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "fechaUltimoContacto",
+              "displayName": "fechaUltimoContacto",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 8AM": {
+      "main": [
+        [
+          {
+            "node": "Leer Hoja Turnos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Hoja Turnos": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Turnos de Manana",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Turnos de Manana": {
+      "main": [
+        [
+          {
+            "node": "Enviar Recordatorio WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Recordatorio WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Turno a RECORDATORIO_ENVIADO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Turno a RECORDATORIO_ENVIADO": {
+      "main": [
+        [
+          {
+            "node": "Upsert Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  }
+}

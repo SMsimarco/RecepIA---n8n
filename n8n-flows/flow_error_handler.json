@@ -1,0 +1,81 @@
+{
+  "name": "Flow - Error Handler RecepIA",
+  "nodes": [
+    {
+      "id": "eh-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "parameters": {}
+    },
+    {
+      "id": "eh-extraer",
+      "name": "Extraer Info Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst errorMsg = data.execution?.error?.message || 'Error desconocido';\nconst nodoFallido = data.execution?.error?.node?.name || data.execution?.lastNodeExecuted || 'Desconocido';\nconst workflowName = data.execution?.workflowData?.name || 'Flow 2';\nconst executionId = data.execution?.id || '';\nconst executionUrl = data.execution?.url || '';\nreturn [{ json: { errorMsg, nodoFallido, workflowName, executionId, executionUrl } }];"
+      }
+    },
+    {
+      "id": "eh-config",
+      "name": "Leer Configuracion",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Configuracion" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "eh-preparar",
+      "name": "Preparar Alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "jsCode": "const err = $('Extraer Info Error').first().json;\nconst config = $('Leer Configuracion').first().json;\nconst twilioAuth = 'Basic ' + Buffer.from(config.twilio_account_sid + ':' + config.twilio_auth_token).toString('base64');\nconst twilioUrl = 'https://api.twilio.com/2010-04-01/Accounts/' + config.twilio_account_sid + '/Messages.json';\nconst adminTel = String(config.telefono_admin || '').replace(/\\D/g, '');\nconst mensaje = '\\u26a0\\ufe0f ERROR cr\\u00edtico en RecepIA\\n\\nFlow: ' + err.workflowName + '\\nNodo: ' + err.nodoFallido + '\\nError: ' + String(err.errorMsg).slice(0, 300) + '\\n\\nID ejecuci\\u00f3n: ' + err.executionId + (err.executionUrl ? '\\n' + err.executionUrl : '');\nreturn [{ json: { twilioAuth, twilioUrl, adminTel, mensaje, twilioFrom: config.twilio_from } }];"
+      }
+    },
+    {
+      "id": "eh-alertar-admin",
+      "name": "Alertar Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.twilioUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $json.twilioAuth }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $json.twilioFrom }}" },
+            { "name": "To", "value": "=whatsapp:+{{ $json.adminTel }}" },
+            { "name": "Body", "value": "={{ $json.mensaje }}" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": { "main": [[{ "node": "Extraer Info Error", "type": "main", "index": 0 }]] },
+    "Extraer Info Error": { "main": [[{ "node": "Leer Configuracion", "type": "main", "index": 0 }]] },
+    "Leer Configuracion": { "main": [[{ "node": "Preparar Alerta", "type": "main", "index": 0 }]] },
+    "Preparar Alerta": { "main": [[{ "node": "Alertar Admin", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,16 @@
+## Mi contexto de negocio
+
+Objetivo: $6.000 USD/mes antes del 31/12/2025
+
+Servicios:
+- Automatizaciones custom con n8n (mi gig principal en Fiverr)
+- Sistema WhatsApp para clínicas (producto propio)
+- Agente de email con CRM (en desarrollo)
+
+Situación actual:
+- Cliente activo: empresa española (modelo: [completá])
+- Fiverr: gig de CRM/email activo, me preguntan por automatización general
+- Leads: [listá los que tenés esta semana]
+- Cuello de botella esta semana: [qué te está frenando]
+
+Stack: n8n, Twilio, Google Sheets, Claude API, Supabase, React, Node.js

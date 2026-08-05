@@ -1,0 +1,455 @@
+{
+  "name": "Flow 2 - Hub Central Respuestas WhatsApp v2",
+  "nodes": [
+    {
+      "id": "f2-webhook",
+      "name": "Webhook Twilio",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "whatsapp-incoming"
+    },
+    {
+      "id": "f2-respond-200",
+      "name": "Responder 200 a Twilio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "f2-code-parse",
+      "name": "Parsear Mensaje Entrante",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $('Webhook Twilio').first().json;\nconst body = raw.body || raw.params?.body || {};\nconst ds = ['sent','delivered','read','failed','undelivered','queued','sending'];\nif (ds.includes(body?.SmsStatus) || ds.includes(body?.MessageStatus)) return [];\nconst mensajeTexto = (body?.Body || '').trim();\nif (!mensajeTexto) return [];\nconst from = body?.From || '';\nconst telefono = from.startsWith('whatsapp:') ? from.replace('whatsapp:+', '') : (body?.WaId || '');\nif (!telefono) return [];\nreturn [{ json: { telefono, mensajeTexto } }];"
+      }
+    },
+    {
+      "id": "f2-sheets-buscar",
+      "name": "Buscar Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [660, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f2-code-acumular",
+      "name": "Preparar Acumulacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const telefono = $('Parsear Mensaje Entrante').first().json.telefono;\nconst mensajeTexto = $('Parsear Mensaje Entrante').first().json.mensajeTexto;\nconst todos = $('Buscar Paciente').all();\nconst paciente = todos.find(i => String(i.json.telefono) === String(telefono))?.json || {};\nconst ultimoTS = paciente.ultimoMensaje || '';\nconst esViejo = !ultimoTS || (Date.now() - new Date(ultimoTS).getTime()) > 30000;\nconst pendientesActuales = esViejo ? '' : (paciente.mensajesPendientes || '');\nconst nuevosPendientes = pendientesActuales ? pendientesActuales + '\\n' + mensajeTexto : mensajeTexto;\nconst timestamp = new Date().toISOString();\nreturn [{ json: { telefono, nuevosPendientes, timestamp } }];"
+      }
+    },
+    {
+      "id": "f2-sheets-guardar",
+      "name": "Guardar Mensaje Pendiente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1100, 300],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $json.telefono }}",
+            "mensajesPendientes": "={{ $json.nuevosPendientes }}",
+            "ultimoMensaje": "={{ $json.timestamp }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "canBeUsedToMatch": true },
+            { "id": "mensajesPendientes", "displayName": "mensajesPendientes", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "ultimoMensaje", "displayName": "ultimoMensaje", "required": false, "defaultMatch": false, "canBeUsedToMatch": false }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f2-wait",
+      "name": "Esperar 8 segundos",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1320, 300],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 10,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "f2-sheets-releer",
+      "name": "Re-leer Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1540, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f2-code-verificar",
+      "name": "Verificar Debounce",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const acum = $('Preparar Acumulacion').first().json;\nconst todos = $('Re-leer Paciente').all();\nconst paciente = todos.find(i => String(i.json.telefono) === String(acum.telefono))?.json || {};\nif ((paciente.ultimoMensaje || '') !== acum.timestamp) return [];\nconst mensajesCombinados = paciente.mensajesPendientes || '';\nreturn [{ json: { telefono: acum.telefono, mensajesCombinados } }];"
+      }
+    },
+    {
+      "id": "f2-sheets-leer-turnos",
+      "name": "Leer Turnos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/ssimonmarconi%40gmail.com/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "timeMin", "value": "={{ new Date().toISOString() }}" },
+            { "name": "timeMax", "value": "={{ new Date(Date.now() + 14*24*60*60*1000).toISOString() }}" },
+            { "name": "singleEvents", "value": "true" },
+            { "name": "orderBy", "value": "startTime" },
+            { "name": "maxResults", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "Google Calendar Account"
+        }
+      }
+    },
+    {
+      "id": "f2-code-contexto",
+      "name": "Preparar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const debounce = $('Verificar Debounce').first().json;\nconst telefono = debounce.telefono;\nconst mensajeTexto = debounce.mensajesCombinados;\nconst todos = $('Re-leer Paciente').all();\nconst paciente = todos.find(i => String(i.json.telefono) === String(telefono))?.json || {};\nlet convDatos = {};\ntry { convDatos = JSON.parse(paciente.conversacionDatos || '{}'); } catch(e) {}\n\nconst nombre = paciente.nombre || 'Paciente';\nconst estadoPaciente = paciente.estado || 'NUEVO';\nconst convEstado = paciente.conversacionEstado || '';\nconst convDatosStr = convEstado ? (paciente.conversacionDatos || '{}') : '{}';\n\n// Leer turnos desde Google Calendar\nconst calResp = $('Leer Turnos').first().json;\nconst allTurnos = calResp.items || [];\nconst ocupadosPorFecha = {};\nallTurnos.forEach(t => {\n  const dt = t.start?.dateTime;\n  if (!dt) return;\n  const d = new Date(dt);\n  const f = d.toISOString().split('T')[0];\n  const h = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');\n  if (!ocupadosPorFecha[f]) ocupadosPorFecha[f] = [];\n  ocupadosPorFecha[f].push(h);\n});\nconst hoy = new Date().toISOString().split('T')[0];\nconst diasDisponibles = [];\nfor (let d = 1; d <= 14; d++) {\n  const dt = new Date(); dt.setDate(dt.getDate() + d);\n  const dow = dt.getDay();\n  if (dow === 0) continue;\n  const fechaStr = dt.toISOString().split('T')[0];\n  const maxSlots = dow === 6 ? 10 : 26;\n  const ocupados = (ocupadosPorFecha[fechaStr] || []).length;\n  if (ocupados < maxSlots) {\n    const nombreDia = ['dom','lun','mar','mié','jue','vie','sáb'][dow];\n    diasDisponibles.push(nombreDia + ' ' + fechaStr.slice(8) + '/' + fechaStr.slice(5,7));\n  }\n}\nconst disponibilidadResumen = diasDisponibles.length > 0\n  ? 'Días con turnos disponibles (próximos 14 días): ' + diasDisponibles.slice(0,5).join(', ')\n  : 'Sin disponibilidad en los próximos 14 días';\n\nconst systemPrompt = `Sos la recepcionista virtual de Centro Médico San Martín, una clínica odontológica en Tandil, Argentina.\n\nSERVICIOS Y PRECIOS APROXIMADOS:\n- Consulta/revisación: $15.000 a $20.000\n- Limpieza dental: $25.000 a $35.000\n- Extracción simple: $20.000 a $30.000\n- Blanqueamiento: $80.000 a $120.000\n- Ortodoncia: desde $150.000 (varía según el caso)\n- Implantes y endodoncia: se evalúan en consulta\n- Carillas: desde $60.000 por unidad\n\nOBRAS SOCIALES: trabajamos con todas. Si preguntan por una específica, confirmá que sí y decí que los detalles de cobertura se ven en el consultorio. NO des el teléfono para esto.\nFORMAS DE PAGO: efectivo, transferencia y tarjeta. Se coordinan en el consultorio.\nHORARIO: lunes a viernes de 8 a 21hs, sábados de 8 a 13hs. Respondés 24/7.\nDIRECCIÓN: Av. San Martín 450, Tandil.\nTELÉFONO: +54 249 442-0000 (solo para urgencias sin turno disponible).\n\nMANEJO DE PRECIOS: NO des precios salvo que el paciente los pida explícitamente.\nSi pregunta por un servicio, mostrá interés y ofrecé agendar. Ej: Sí, hacemos blanqueamiento. ¿Querés que te agendemos una consulta para ver qué opción te conviene?\nSi pregunta el precio de una consulta, decí que ronda los $15.000 a $20.000 y que en esa consulta la doctora evalúa el tratamiento que necesite.\n\nCUANDO CONFIRMÁS UN TURNO Y EL PACIENTE TAMBIÉN HIZO UNA PREGUNTA: primero respondé la pregunta, después la confirmación del turno, y al final el recordatorio. Nunca al revés.\nAl confirmar el turno, poné el día y el horario en negrita usando formato WhatsApp: *día* y *hora*. Ejemplo: el *lunes 21 de abril* a las *10:00hs*.\nCuando listés días u horarios disponibles, también ponelos en negrita. Ejemplo: *lunes 20*, *martes 21*, *10:00hs*, *14:00hs*.\n\nREGLAS ESTRICTAS DE FECHAS Y HORARIOS — NUNCA VIOLARLAS:\n- Nunca asumas un día que el paciente no dijo. Si dijo \"a la tarde\" sin día, preguntá el día primero.\n- Nunca asumas un horario. Si dijo \"a la mañana\" o \"a la tarde\", preguntá la hora exacta.\n- Nunca combines asunciones: \"tarde\" + \"jueves\" no te da \"jueves 17:00hs\". Primero confirmá el día, luego pedí la hora.\n- \"El otro [día]\" significa la SIGUIENTE semana de ese día. Ej: si hoy es sábado 19/4 y dice \"el otro jueves\", es jueves 30/4, no jueves 24/4.\n- Cuando el paciente da un día de la semana sin fecha, calculá la fecha exacta usando la fecha de hoy y ponela en datos.\n- Nunca sugieras una fecha específica que el paciente no mencionó. Solo listá opciones disponibles.\n\nCUANDO CONFIRMÁS UN TURNO: al final del mensaje de confirmación agregá siempre un recordatorio útil según el caso:\n- Si tiene obra social: recordale que traiga el carnet.\n- Para limpieza: que evite comer 1 hora antes.\n- Para extracción o cirugía: que venga acompañado si puede.\n- Para ortodoncia o implantes: que traiga estudios previos si tiene.\n- Si no aplica ninguno: recordale la dirección nomás.\n\nSITUACIONES ESPECIALES:\n- Llegada tarde: hasta 15 minutos el turno se sostiene. Más de eso puede perderse.\n- Urgencias: intentá dar el turno más cercano. Solo si no hay lugar pasá el teléfono.\n- Síntomas o dolor: recomendá revisación y ofrecé agendar.\n- Casos complejos: la doctora evalúa en la primera consulta.\n- Preguntas que no podés responder: decí que se lo informan en el consultorio.\n\nTONO: hablá como una recepcionista joven, simpática y natural. Descontracturada pero profesional. Usá siempre vos/te. Nunca digas que sos una IA.\nNada de frases robóticas como Por supuesto, Entendido, Claro que sí, Con gusto. Hablá como hablaría una persona real.\nUsá el nombre del paciente SOLO al saludar al principio o al despedirte. En ningún otro momento.\nNunca expliques cómo escribir fechas ni formatos.\n\nRESPONDÉ SIEMPRE con este JSON exacto sin markdown ni texto extra:\n{\"accion\":\"PEDIR_FECHA|PEDIR_HORA|CONFIRMAR_DATOS|CREAR_TURNO|CANCELAR_CONV|CONFIRMAR|CANCELAR|REPROGRAMAR|CONSULTA|REVIEW|OTRO\",\"nuevo_conv_estado\":\"ESPERANDO_FECHA|ESPERANDO_HORA|ESPERANDO_CONFIRMACION|\",\"datos\":{\"fecha\":\"\",\"hora\":\"\",\"servicio\":\"Consulta general\"},\"respuesta\":\"mensaje para el paciente\",\"nuevo_estado_paciente\":\"\"}`;\n\nconst turnoExistente = allTurnos\n  .filter(t => (t.description || '').includes(String(telefono)))\n  .sort((a,b) => (a.start?.dateTime||'') > (b.start?.dateTime||'') ? 1 : -1)[0] || null;\nlet turnoInfo = 'Sin turno activo';\nif (turnoExistente) {\n  const dte = new Date(turnoExistente.start.dateTime);\n  const fe = dte.toISOString().split('T')[0];\n  const he = String(dte.getHours()).padStart(2,'0') + ':' + String(dte.getMinutes()).padStart(2,'0');\n  const se = turnoExistente.summary?.replace('Turno: ','').split(' - ')[1] || '';\n  turnoInfo = `Tiene turno: ${fe} a las ${he}${se ? ' (' + se + ')' : ''}`;\n}\n\nconst userPrompt = `Datos del paciente:\n- Nombre: ${nombre}\n- Estado conversación activa: ${convEstado || 'NINGUNO'}\n- Datos parciales del turno: ${convDatosStr}\n- Estado en sistema: ${estadoPaciente}\n- Fecha de hoy: ${hoy}\n- ${turnoInfo}\n- ${disponibilidadResumen}\n\nMensaje del paciente: ${mensajeTexto}\n\nREGLAS de agendamiento:\n1. Sin conv activa + quiere turno/agendar -> accion PEDIR_FECHA\n2. Sin conv activa + otro mensaje -> respondé con la accion apropiada (CONFIRMAR/CANCELAR/REPROGRAMAR/CONSULTA/REVIEW/OTRO)\n3. convEstado=ESPERANDO_FECHA -> interpretá la fecha aunque sea informal (mañana, el lunes, 22/4) -> convertila a YYYY-MM-DD -> accion PEDIR_HORA\n4. convEstado=ESPERANDO_HORA -> interpretá la hora aunque sea informal (10am, a las 3, por la tarde, o solo un número como \"11\" o \"9\") -> un número solo siempre es una hora -> convertila a HH:MM -> accion CONFIRMAR_DATOS\n5. convEstado=ESPERANDO_CONFIRMACION + confirma -> accion CREAR_TURNO\n6. convEstado=ESPERANDO_CONFIRMACION + cancela -> accion CANCELAR_CONV`;\n\nconst body = JSON.stringify({\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 500,\n  system: systemPrompt,\n  messages: [{ role: 'user', content: userPrompt }]\n});\n\nreturn [{ json: {\n  telefono, mensajeTexto, nombre, estadoPaciente,\n  convEstado, convDatos: convDatosStr,\n  body\n}}];"
+      }
+    },
+    {
+      "id": "f2-claude",
+      "name": "Claude Clasifica y Analiza",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}"
+      }
+    },
+    {
+      "id": "f2-code-hub",
+      "name": "Hub Central Logica",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const contexto = $('Preparar Contexto').first().json;\nconst claudeRaw = $('Claude Clasifica y Analiza').first().json.content?.[0]?.text || '{}';\nlet claudeData;\ntry {\n  const cleanRaw = claudeRaw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  claudeData = JSON.parse(cleanRaw);\n} catch(e) {\n  claudeData = { accion: 'OTRO', respuesta: 'Gracias por escribirnos.', nuevo_conv_estado: '', datos: {}, nuevo_estado_paciente: '' };\n}\nconst accion = claudeData.accion || 'OTRO';\nlet respuesta = claudeData.respuesta || 'Gracias por escribirnos.';\nconst terminarConv = accion === 'CREAR_TURNO' || accion === 'CANCELAR_CONV';\nlet nuevoConvEstado = terminarConv ? '' : (claudeData.nuevo_conv_estado || '');\nlet convDatosActuales = {};\ntry { convDatosActuales = JSON.parse(contexto.convDatos); } catch(e) {}\nconst claudeDatos = claudeData.datos || {};\nconst filteredDatos = Object.fromEntries(Object.entries(claudeDatos).filter(([k,v]) => v !== '' && v !== null && v !== undefined));\nconst convDatosMerged = { ...convDatosActuales, ...filteredDatos };\nconst convDatosStr = terminarConv ? '{}' : JSON.stringify(convDatosMerged);\nlet nuevoEstadoPaciente = claudeData.nuevo_estado_paciente || contexto.estadoPaciente;\nif (accion === 'CREAR_TURNO') nuevoEstadoPaciente = 'CONFIRMADO';\nif (accion === 'CONFIRMAR_DATOS' && convDatosMerged.fecha && convDatosMerged.hora) {\n  const DURACION = 45;\n  const calResp = $('Leer Turnos').first().json;\n  const allTurnos = calResp.items || [];\n  const [hh, mm] = convDatosMerged.hora.split(':').map(Number);\n  const minReq = hh * 60 + mm;\n  const ocupado = allTurnos.some(t => {\n    const dt = t.start?.dateTime;\n    if (!dt) return false;\n    const d = new Date(dt);\n    const f = d.toISOString().split('T')[0];\n    if (f !== convDatosMerged.fecha) return false;\n    return Math.abs(minReq - (d.getHours()*60+d.getMinutes())) < DURACION;\n  });\n  if (ocupado) {\n    let minNext = minReq + DURACION;\n    let horaAlt = null;\n    while (minNext <= 21*60) {\n      const libre = !allTurnos.some(t => {\n        const dt = t.start?.dateTime;\n        if (!dt) return false;\n        const d = new Date(dt);\n        const f = d.toISOString().split('T')[0];\n        if (f !== convDatosMerged.fecha) return false;\n        return Math.abs(minNext - (d.getHours()*60+d.getMinutes())) < DURACION;\n      });\n      if (libre) { const h = Math.floor(minNext/60); const m = minNext%60; horaAlt = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); break; }\n      minNext += DURACION;\n    }\n    if (horaAlt) {\n      convDatosMerged.hora = horaAlt;\n      respuesta = 'Ese horario ya está ocupado. El próximo disponible es a las ' + horaAlt + 'hs. ¿Te viene bien?';\n    } else {\n      convDatosMerged.fecha = ''; convDatosMerged.hora = '';\n      nuevoConvEstado = 'ESPERANDO_FECHA';\n      respuesta = 'Lo siento, no hay más horarios disponibles ese día. ¿Querés intentar con otro día?';\n    }\n  }\n}\nlet turnoData = null;\nif (accion === 'CREAR_TURNO') {\n  turnoData = {\n    turno_id: contexto.telefono + '_' + convDatosMerged.fecha,\n    telefono: contexto.telefono,\n    nombre: contexto.nombre,\n    servicio: convDatosMerged.servicio || 'Consulta general',\n    fecha: convDatosMerged.fecha,\n    hora: convDatosMerged.hora,\n    estado_turno: 'CONFIRMADO'\n  };\n}\nreturn [{ json: { telefono: contexto.telefono, nombre: contexto.nombre, respuesta, nuevoEstadoPaciente, nuevoConvEstado, convDatos: convDatosStr, accion, turnoData } }];"
+      }
+    },
+    {
+      "id": "f2-twilio-send",
+      "name": "Responder WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Basic {{ btoa($env.TWILIO_ACCOUNT_SID + ':' + $env.TWILIO_AUTH_TOKEN) }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "whatsapp:+19895660683" },
+            { "name": "To", "value": "=whatsapp:+{{ $json.telefono }}" },
+            { "name": "Body", "value": "={{ $json.respuesta }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f2-sheets-update",
+      "name": "Actualizar Estado Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [3080, 300],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Hub Central Logica').first().json.telefono }}",
+            "estado": "={{ $('Hub Central Logica').first().json.nuevoEstadoPaciente }}",
+            "conversacionEstado": "={{ $('Hub Central Logica').first().json.nuevoConvEstado }}",
+            "conversacionDatos": "={{ $('Hub Central Logica').first().json.convDatos }}",
+            "fechaUltimoContacto": "={{ new Date().toISOString() }}",
+            "mensajesPendientes": "",
+            "ultimoMensaje": ""
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "canBeUsedToMatch": true },
+            { "id": "estado", "displayName": "estado", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "conversacionEstado", "displayName": "conversacionEstado", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "conversacionDatos", "displayName": "conversacionDatos", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "fechaUltimoContacto", "displayName": "fechaUltimoContacto", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "mensajesPendientes", "displayName": "mensajesPendientes", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "ultimoMensaje", "displayName": "ultimoMensaje", "required": false, "defaultMatch": false, "canBeUsedToMatch": false }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f2-code-turno",
+      "name": "Preparar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const data = $('Hub Central Logica').first().json;\nif (data.accion !== 'CREAR_TURNO' || !data.turnoData) return [];\nconst t = data.turnoData;\nconst DURACION = 45;\nconst [hh, mm] = t.hora.split(':').map(Number);\nconst finMin = hh * 60 + mm + DURACION;\nconst horaFin = String(Math.floor(finMin/60)).padStart(2,'0') + ':' + String(finMin%60).padStart(2,'0');\nconst evento = {\n  summary: `Turno: ${t.nombre} - ${t.servicio}`,\n  description: `Paciente: ${t.nombre}\\nTelefono: +${t.telefono}\\nServicio: ${t.servicio}`,\n  start: { dateTime: `${t.fecha}T${t.hora}:00-03:00`, timeZone: 'America/Argentina/Buenos_Aires' },\n  end: { dateTime: `${t.fecha}T${horaFin}:00-03:00`, timeZone: 'America/Argentina/Buenos_Aires' }\n};\nreturn [{ json: {\n  body: JSON.stringify(evento),\n  turno_id: t.turno_id,\n  telefono: t.telefono,\n  nombre: t.nombre,\n  servicio: t.servicio,\n  fecha: t.fecha,\n  hora: t.hora,\n  estado_turno: t.estado_turno\n}}];"
+      }
+    },
+    {
+      "id": "f2-sheets-turno-sheets",
+      "name": "Guardar Turno en Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [3740, 300],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $('Preparar Turno').first().json.turno_id }}",
+            "telefono": "={{ $('Preparar Turno').first().json.telefono }}",
+            "nombre": "={{ $('Preparar Turno').first().json.nombre }}",
+            "servicio": "={{ $('Preparar Turno').first().json.servicio }}",
+            "fecha": "={{ $('Preparar Turno').first().json.fecha }}",
+            "hora": "={{ $('Preparar Turno').first().json.hora }}",
+            "estado_turno": "={{ $('Preparar Turno').first().json.estado_turno }}"
+          },
+          "matchingColumns": ["turno_id"],
+          "schema": [
+            { "id": "turno_id", "displayName": "turno_id", "required": false, "defaultMatch": true, "canBeUsedToMatch": true },
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "nombre", "displayName": "nombre", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "servicio", "displayName": "servicio", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "fecha", "displayName": "fecha", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "hora", "displayName": "hora", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "estado_turno", "displayName": "estado_turno", "required": false, "defaultMatch": false, "canBeUsedToMatch": false }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f2-sheets-turno",
+      "name": "Crear Turno en Calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/ssimonmarconi%40gmail.com/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "Google Calendar Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Twilio": {
+      "main": [[{ "node": "Responder 200 a Twilio", "type": "main", "index": 0 }]]
+    },
+    "Responder 200 a Twilio": {
+      "main": [[{ "node": "Parsear Mensaje Entrante", "type": "main", "index": 0 }]]
+    },
+    "Parsear Mensaje Entrante": {
+      "main": [[{ "node": "Buscar Paciente", "type": "main", "index": 0 }]]
+    },
+    "Buscar Paciente": {
+      "main": [[{ "node": "Preparar Acumulacion", "type": "main", "index": 0 }]]
+    },
+    "Preparar Acumulacion": {
+      "main": [[{ "node": "Guardar Mensaje Pendiente", "type": "main", "index": 0 }]]
+    },
+    "Guardar Mensaje Pendiente": {
+      "main": [[{ "node": "Esperar 8 segundos", "type": "main", "index": 0 }]]
+    },
+    "Esperar 8 segundos": {
+      "main": [[{ "node": "Re-leer Paciente", "type": "main", "index": 0 }]]
+    },
+    "Re-leer Paciente": {
+      "main": [[{ "node": "Verificar Debounce", "type": "main", "index": 0 }]]
+    },
+    "Verificar Debounce": {
+      "main": [[{ "node": "Leer Turnos", "type": "main", "index": 0 }]]
+    },
+    "Leer Turnos": {
+      "main": [[{ "node": "Preparar Contexto", "type": "main", "index": 0 }]]
+    },
+    "Preparar Contexto": {
+      "main": [[{ "node": "Claude Clasifica y Analiza", "type": "main", "index": 0 }]]
+    },
+    "Claude Clasifica y Analiza": {
+      "main": [[{ "node": "Hub Central Logica", "type": "main", "index": 0 }]]
+    },
+    "Hub Central Logica": {
+      "main": [[{ "node": "Responder WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Responder WhatsApp": {
+      "main": [[{ "node": "Actualizar Estado Paciente", "type": "main", "index": 0 }]]
+    },
+    "Actualizar Estado Paciente": {
+      "main": [[{ "node": "Preparar Turno", "type": "main", "index": 0 }]]
+    },
+    "Preparar Turno": {
+      "main": [[{ "node": "Crear Turno en Calendar", "type": "main", "index": 0 }]]
+    },
+    "Crear Turno en Calendar": {
+      "main": [[{ "node": "Guardar Turno en Sheets", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  }
+}

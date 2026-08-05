@@ -1,0 +1,691 @@
+{
+  "name": "Flow 2 v6 - Hub Central Agente Configurable + Audio",
+  "nodes": [
+    {
+      "id": "f4-webhook",
+      "name": "Webhook Twilio",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "whatsapp-incoming"
+    },
+    {
+      "id": "f4-respond",
+      "name": "Responder 200 a Twilio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "f4-parse",
+      "name": "Parsear Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $('Webhook Twilio').first().json;\nconst body = raw.body || raw.params?.body || {};\nconst ds = ['sent','delivered','read','failed','undelivered','queued','sending'];\nif (ds.includes(body?.SmsStatus) || ds.includes(body?.MessageStatus)) return [];\nconst mensajeTexto = (body?.Body || '').trim();\nconst mediaUrl = body?.MediaUrl0 || '';\nconst esAudio = !mensajeTexto && !!mediaUrl;\nif (!mensajeTexto && !esAudio) return [];\nconst from = body?.From || '';\nconst telefono = from.startsWith('whatsapp:') ? from.replace('whatsapp:+','') : (body?.WaId || '');\nif (!telefono) return [];\nreturn [{ json: { telefono, mensajeTexto, mediaUrl, tipoMensaje: esAudio ? 'audio' : 'texto' } }];"
+      }
+    },
+    {
+      "id": "f4-config",
+      "name": "Leer Configuracion",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [660, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Configuracion" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "f4-if-tipo",
+      "name": "IF Tipo Mensaje",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-audio",
+              "leftValue": "={{ $('Parsear Mensaje').first().json.tipoMensaje }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f4-preparar-auth-audio",
+      "name": "Preparar Auth Audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 500],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const config = $('Leer Configuracion').first().json;\nconst twilioAuth = 'Basic ' + Buffer.from(config.twilio_account_sid + ':' + config.twilio_auth_token).toString('base64');\nconst mediaUrl = $('Parsear Mensaje').first().json.mediaUrl;\nreturn [{ json: { twilioAuth, mediaUrl } }];"
+      }
+    },
+    {
+      "id": "f4-descargar-audio",
+      "name": "Descargar Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.mediaUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.twilioAuth }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "f4-transcribir-groq",
+      "name": "Transcribir Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            { "name": "model", "value": "whisper-large-v3-turbo" },
+            { "name": "language", "value": "es" },
+            { "name": "prompt", "value": "Mensaje de WhatsApp en español rioplatense, puede incluir modismos argentinos" }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "name": "Groq API Key" }
+      }
+    },
+    {
+      "id": "f4-inyectar-texto",
+      "name": "Inyectar Texto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 500],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const transcripcion = $input.first().json.text || '';\nconst telefono = $('Parsear Mensaje').first().json.telefono;\nreturn [{ json: { telefono, mensajeTexto: transcripcion } }];"
+      }
+    },
+    {
+      "id": "f4-buscar",
+      "name": "Buscar Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1100, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Pacientes" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "f4-acum",
+      "name": "Preparar Acumulacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const parsed = $('Parsear Mensaje').first().json;\nconst telefono = parsed.telefono;\nconst mensajeTexto = parsed.tipoMensaje === 'audio'\n  ? $('Inyectar Texto').first().json.mensajeTexto\n  : parsed.mensajeTexto;\nconst normTel = t => { let s = String(t).replace(/\\D/g, ''); if (s.startsWith('54')) s = s.slice(2); if (s.startsWith('9') && s.length >= 10) s = s.slice(1); return s; };\nconst telNorm = normTel(telefono);\nconst todos = $('Buscar Paciente').all();\nconst paciente = todos.find(i => normTel(i.json.telefono) === telNorm)?.json || {};\nconst esViejo = !paciente.ultimoMensaje || (Date.now() - new Date(paciente.ultimoMensaje).getTime()) > 30000;\nconst pendientes = esViejo ? '' : (paciente.mensajesPendientes || '');\nconst nuevosPendientes = pendientes ? pendientes + '\\n' + mensajeTexto : mensajeTexto;\nconst timestamp = new Date().toISOString();\nreturn [{ json: { telefono, nuevosPendientes, timestamp } }];"
+      }
+    },
+    {
+      "id": "f4-guardar",
+      "name": "Guardar Pendiente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1540, 300],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "id", "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Pacientes" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $json.telefono }}",
+            "mensajesPendientes": "={{ $json.nuevosPendientes }}",
+            "ultimoMensaje": "={{ $json.timestamp }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "canBeUsedToMatch": true },
+            { "id": "mensajesPendientes", "displayName": "mensajesPendientes", "required": false, "defaultMatch": false, "canBeUsedToMatch": false },
+            { "id": "ultimoMensaje", "displayName": "ultimoMensaje", "required": false, "defaultMatch": false, "canBeUsedToMatch": false }
+          ]
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "f4-wait",
+      "name": "Esperar 10 segundos",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1760, 300],
+      "parameters": { "resume": "timeInterval", "amount": 10, "unit": "seconds" }
+    },
+    {
+      "id": "f4-releer",
+      "name": "Re-leer Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1980, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Pacientes" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "f4-debounce",
+      "name": "Verificar Debounce",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const acum = $('Preparar Acumulacion').first().json;\nconst todos = $('Re-leer Paciente').all();\nconst paciente = todos.find(i => String(i.json.telefono) === String(acum.telefono))?.json || {};\nif ((paciente.ultimoMensaje || '') !== acum.timestamp) return [];\nreturn [{ json: { telefono: acum.telefono, mensajesCombinados: paciente.mensajesPendientes || '' } }];"
+      }
+    },
+    {
+      "id": "f4-construir",
+      "name": "Construir Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const config = $('Leer Configuracion').first().json;\nconst debounce = $('Verificar Debounce').first().json;\n\nconst systemPrompt = `Sos la recepcionista de ${config.nombre_clinica}, ${config.tipo_clinica} en ${config.ciudad}. Recibís mensajes de WhatsApp. Nunca decís que sos IA ni un bot.\\n\\nCada mensaje incluye [TELEFONO] y [MENSAJE]. Usá el teléfono para llamar a las tools.\\n\\nINICIO DE CONVERSACIÓN:\\nLlamá siempre a buscar_contexto(telefono) al inicio para obtener nombre, estado y disponibilidad.\\nSi es el primer mensaje del paciente (sin historial): saludá una sola vez, breve.\\n  - Si lo conocés: \\\"¡Hola [nombre]! ¿en qué te puedo ayudar?\\\"\\n  - Si no: \\\"¡Hola! Soy la recepción de ${config.nombre_clinica}. ¿Con quién hablo?\\\"\\nSi ya hay historial: NO volvás a saludar. Seguí el hilo directo.\\nSi el paciente te dice su nombre durante la conversación: integrálo sin reiniciar el saludo. Ejemplo: \\\"dale [nombre], ¿para qué día lo querés?\\\" o \\\"¿y qué estabas buscando, [nombre]?\\\"\\n\\nSERVICIOS:\\nNo los menciones proactivamente. Mostrá la lista solo cuando el paciente pida turno, pregunte qué tratamientos hay, o muestre intención de atenderse.\\nServicios disponibles: ${config.servicios}\\n\\nOBRAS SOCIALES: ${config.obras_sociales}\\nPAGO: ${config.metodos_pago}\\nHORARIO: ${config.horario}. Respondés 24/7.\\nDIRECCIÓN: ${config.direccion}\\nTELÉFONO: ${config.telefono_urgencias} (solo urgencias sin turno).\\nPRECIOS: solo si el paciente los pide explícitamente.\\n\\nTONO Y FORMA DE HABLAR:\\nEscribí como una recepcionista real por WhatsApp. Sin estructura formal, sin párrafos, sin introducciones.\\nFrases cortas. Una idea por vez. Nada de respuestas largas salvo que el paciente necesite info específica.\\nUsá vos/te. Expresiones naturales: \\\"dale\\\", \\\"anotado\\\", \\\"mirá\\\", \\\"bueno\\\", \\\"fijate\\\", \\\"te cuento\\\", \\\"ya te fijo\\\", \\\"bárbaro\\\".\\nNunca uses: \\\"Por supuesto\\\", \\\"Entendido\\\", \\\"Claro que sí\\\", \\\"Con gusto\\\", \\\"¡Perfecto!\\\", \\\"Encantada\\\", \\\"Le comento\\\", \\\"Por favor\\\".\\nNo repitas el nombre del paciente en cada mensaje. Una vez cada tanto, no en todas las respuestas.\\nSi manda varios mensajes seguidos, respondé al conjunto como si fuera uno solo.\\nSi escribe con errores, entendé la intención sin corregirlo.\\nNunca volvás a saludar si ya estamos en conversación — seguí el hilo sin reiniciar.\\n\\nTURNOS — REGLAS ESTRICTAS:\\n- Nunca asumas día/hora que el paciente no dijo.\\n- \\\"a la mañana/tarde\\\" → preguntá hora exacta.\\n- Fechas informales → YYYY-MM-DD. Horas informales → HH:MM. Número solo (\\\"11\\\") → es una hora.\\n- \\\"El otro [día]\\\" = semana siguiente.\\n- Nunca sugieras fechas que el paciente no mencionó, solo listá opciones disponibles.\\n- Al confirmar: *negrita WhatsApp* para día y hora.\\n- Recordatorio al confirmar: obra social→carnet; limpieza→no comer 1h antes; extracción→ir acompañado; ortodoncia/implantes→traer estudios; default→dirección.\\n\\nTELÉFONO DEL SISTEMA:\\nEl número en [TELEFONO] es el identificador del paciente. Usálo SIEMPRE tal cual. NUNCA le pidas al paciente su número de teléfono — ya lo tenés en el mensaje. No existe ninguna situación en la que debas pedírselo. Si el paciente menciona un número distinto, ignoralo y seguí usando el [TELEFONO] original.\\n\\nUSO DE TOOLS:\\n- buscar_contexto(telefono): SIEMPRE al inicio de CADA interacción, incluso si ya tenés historial en memoria — la disponibilidad y el estado del paciente cambian constantemente. Usá el número exacto del [TELEFONO]. Si devuelve No registrado, el paciente es NUEVO — no hay error de número.\\n- ver_disponibilidad(fecha): OBLIGATORIO antes de proponer o confirmar cualquier horario específico. Aunque el paciente diga directamente \\\"quiero el lunes a las 10\\\", verificá primero que ese slot está libre. Fecha en YYYY-MM-DD.\\n- crear_turno(nombre, telefono, fecha, hora, servicio): solo después de que ver_disponibilidad confirmó disponibilidad Y el paciente aceptó el horario. Hora siempre en HH:MM (ej: 10:00, no 10). Usá el [TELEFONO] del mensaje.\\n- cancelar_turno(nombre, telefono, fecha): cuando el paciente confirmó cancelar. Solo para turnos futuros. Usá el [TELEFONO] del mensaje.\\nPara CAMBIAR un turno: primero llamá ver_disponibilidad para la nueva fecha, después cancelar_turno para el viejo, después crear_turno para el nuevo. En ese orden.\\n\\nSituaciones especiales: urgencias→buscar turno cercano o dar teléfono; síntomas→ofrecer revisación; tardanza→15min de tolerancia.`;\n\nconst twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${config.twilio_account_sid}/Messages.json`;\nconst twilioAuth = 'Basic ' + Buffer.from(`${config.twilio_account_sid}:${config.twilio_auth_token}`).toString('base64');\n\nconst textoAgente = '[TELEFONO]: ' + debounce.telefono + '\\n[MENSAJE]: ' + debounce.mensajesCombinados;\nreturn [{ json: { textoAgente, telefono: debounce.telefono, mensajesCombinados: debounce.mensajesCombinados, systemPrompt, twilioFrom: config.twilio_from, twilioUrl, twilioAuth, supabaseUrl: config.supabase_url || '', supabaseKey: config.supabase_key || '', clinicaId: config.clinica_id || '' } }];"
+      }
+    },
+    {
+      "id": "f4-agent",
+      "name": "Agente Recepcionista",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [2640, 300],
+      "continueOnFail": true,
+      "parameters": {
+        "agentType": "toolsAgent",
+        "promptType": "define",
+        "text": "={{ $json.textoAgente }}",
+        "options": {
+          "systemMessage": "={{ $json.systemPrompt }}",
+          "maxIterations": 8,
+          "returnIntermediateSteps": false
+        }
+      }
+    },
+    {
+      "id": "f4-llm",
+      "name": "Claude Haiku",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [2420, 540],
+      "parameters": {
+        "model": "claude-haiku-4-5-20251001",
+        "options": { "maxTokens": 800, "temperature": 0.2 }
+      },
+      "credentials": { "anthropicApi": { "name": "Anthropic account" } }
+    },
+    {
+      "id": "f4-memory",
+      "name": "Memoria Conversacion",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [2640, 540],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Verificar Debounce').first().json.telefono }}",
+        "contextWindowLength": 10
+      }
+    },
+    {
+      "id": "f4-tool-buscar",
+      "name": "Tool Buscar Contexto",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.3,
+      "position": [2860, 540],
+      "parameters": {
+        "name": "buscar_contexto",
+        "description": "Obtiene los datos del paciente (nombre, estado) y la disponibilidad del calendario para los próximos 14 días. Llamar cuando no se tiene esta información en el historial. Parámetro requerido: telefono (solo números, sin + ni código de país).",
+        "workflowId": { "__rl": true, "value": "SyRT4CHMdEFwvMgU", "mode": "id" },
+        "fields": {
+          "values": [
+            { "name": "telefono", "stringValue": "={{ $fromAI('telefono', 'Teléfono del paciente, solo números sin +') }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-tool-crear",
+      "name": "Tool Crear Turno",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.3,
+      "position": [3080, 540],
+      "parameters": {
+        "name": "crear_turno",
+        "description": "Crea un turno en Google Calendar y lo registra en el sistema. Usar solo cuando el paciente confirmó fecha, hora y servicio. Parámetros: nombre, telefono, fecha (YYYY-MM-DD), hora (HH:MM), servicio.",
+        "workflowId": { "__rl": true, "value": "Rbtcoddm2IWdfbco", "mode": "id" },
+        "fields": {
+          "values": [
+            { "name": "nombre", "stringValue": "={{ $fromAI('nombre', 'Nombre del paciente') }}" },
+            { "name": "telefono", "stringValue": "={{ $fromAI('telefono', 'Teléfono sin +') }}" },
+            { "name": "fecha", "stringValue": "={{ $fromAI('fecha', 'Fecha en formato YYYY-MM-DD') }}" },
+            { "name": "hora", "stringValue": "={{ $fromAI('hora', 'Hora en formato HH:MM') }}" },
+            { "name": "servicio", "stringValue": "={{ $fromAI('servicio', 'Servicio solicitado, default Consulta general') }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-tool-cancelar",
+      "name": "Tool Cancelar Turno",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.3,
+      "position": [3300, 540],
+      "parameters": {
+        "name": "cancelar_turno",
+        "description": "Cancela el turno de un paciente y actualiza su estado. Usar cuando el paciente confirmó que quiere cancelar. Parámetros: nombre, telefono, fecha (YYYY-MM-DD del turno a cancelar).",
+        "workflowId": { "__rl": true, "value": "fh2e1nLr2kyTxaJL", "mode": "id" },
+        "fields": {
+          "values": [
+            { "name": "nombre", "stringValue": "={{ $fromAI('nombre', 'Nombre del paciente') }}" },
+            { "name": "telefono", "stringValue": "={{ $fromAI('telefono', 'Teléfono sin +') }}" },
+            { "name": "fecha", "stringValue": "={{ $fromAI('fecha', 'Fecha del turno a cancelar en YYYY-MM-DD') }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-tool-disponibilidad",
+      "name": "Tool Ver Disponibilidad",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.3,
+      "position": [3520, 540],
+      "parameters": {
+        "name": "ver_disponibilidad",
+        "description": "Muestra los horarios disponibles para una fecha específica. Llamar cuando el paciente elige un día y se necesita saber qué horarios están libres. Parámetro: fecha (YYYY-MM-DD).",
+        "workflowId": { "__rl": true, "value": "BYjc233ixlNZSKTM", "mode": "id" },
+        "fields": {
+          "values": [
+            { "name": "fecha", "stringValue": "={{ $fromAI('fecha', 'Fecha a consultar en formato YYYY-MM-DD') }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-leer-historial",
+      "name": "Leer Historial Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Construir Prompt').first().json.supabaseUrl }}/rest/v1/conversaciones",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('Construir Prompt').first().json.supabaseKey }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('Construir Prompt').first().json.supabaseKey }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "role,content" },
+            { "name": "telefono", "value": "=eq.{{ $('Verificar Debounce').first().json.telefono }}" },
+            { "name": "clinica_id", "value": "=eq.{{ $('Construir Prompt').first().json.clinicaId }}" },
+            { "name": "order", "value": "created_at.asc" },
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f4-armar-historial",
+      "name": "Armar Historial",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 300],
+      "parameters": {
+        "jsCode": "const config = $('Construir Prompt').first().json;\nconst debounce = $('Verificar Debounce').first().json;\nconst rawResp = $input.first().json;\nconst historialItems = Array.isArray(rawResp) ? rawResp : $input.all().map(i => i.json).filter(i => i.role);\nlet historialTexto = '';\nif (historialItems.length > 0) {\n  const lineas = historialItems.map(h => (h.role === 'user' ? 'Usuario' : 'Recepcionista') + ': ' + h.content).join('\\n');\n  historialTexto = '[HISTORIAL]:\\n' + lineas + '\\n\\n';\n}\nconst textoAgente = historialTexto + '[TELEFONO]: ' + debounce.telefono + '\\n[MENSAJE]: ' + debounce.mensajesCombinados;\nreturn [{ json: { textoAgente, telefono: debounce.telefono, mensajesCombinados: debounce.mensajesCombinados, systemPrompt: config.systemPrompt, twilioFrom: config.twilioFrom, twilioUrl: config.twilioUrl, twilioAuth: config.twilioAuth, supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey, clinicaId: config.clinicaId } }];"
+      }
+    },
+    {
+      "id": "f4-preparar-guardado",
+      "name": "Preparar Guardado Supabase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 480],
+      "parameters": {
+        "jsCode": "const debounce = $('Verificar Debounce').first().json;\nconst config = $('Construir Prompt').first().json;\nconst agentOutput = $('Agente Recepcionista').first().json;\nreturn [{ json: { supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey, telefono: debounce.telefono, clinica_id: config.clinicaId, userContent: debounce.mensajesCombinados || '', assistantContent: agentOutput.output || '' } }];"
+      }
+    },
+    {
+      "id": "f4-guardar-supabase",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3300, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.supabaseUrl }}/rest/v1/conversaciones",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $json.supabaseKey }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $json.supabaseKey }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ telefono: $json.telefono, clinica_id: $json.clinica_id, role: 'user', content: $json.userContent }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f4-guardar-agente",
+      "name": "Guardar Respuesta Agente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Preparar Guardado Supabase').first().json.supabaseUrl }}/rest/v1/conversaciones",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('Preparar Guardado Supabase').first().json.supabaseKey }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $('Preparar Guardado Supabase').first().json.supabaseKey }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ telefono: $('Preparar Guardado Supabase').first().json.telefono, clinica_id: $('Preparar Guardado Supabase').first().json.clinica_id, role: 'assistant', content: $('Preparar Guardado Supabase').first().json.assistantContent }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f4-if-error",
+      "name": "Verificar Error Agente",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2860, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "check-output",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "isEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f4-error-paciente",
+      "name": "Avisar Error a Paciente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3080, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Construir Prompt').first().json.twilioUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $('Construir Prompt').first().json.twilioAuth }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $('Construir Prompt').first().json.twilioFrom }}" },
+            { "name": "To", "value": "=whatsapp:+{{ $('Verificar Debounce').first().json.telefono }}" },
+            { "name": "Body", "value": "Disculpá, tuvimos un problema técnico. Te respondemos en breve." }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-preparar-admin",
+      "name": "Preparar Alerta Admin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 120],
+      "parameters": {
+        "jsCode": "const config = $('Leer Configuracion').first().json;\nconst debounce = $('Verificar Debounce').first().json;\nconst agentData = $('Agente Recepcionista').first().json;\nconst errorMsg = agentData.error?.message || agentData.error || 'Error desconocido en el agente IA';\nconst adminTel = String(config.telefono_admin || '').replace(/\\D/g, '');\nconst mensajeAdmin = '\\u26a0\\ufe0f Error en RecepIA\\n\\nPaciente: +' + debounce.telefono + '\\nMensaje: ' + String(debounce.mensajesCombinados || '(sin mensaje)').slice(0, 300) + '\\nError t\\u00e9cnico: ' + String(errorMsg).slice(0, 300);\nconst twilioAuth = $('Construir Prompt').first().json.twilioAuth;\nconst twilioUrl = $('Construir Prompt').first().json.twilioUrl;\nconst twilioFrom = $('Construir Prompt').first().json.twilioFrom;\nreturn [{ json: { adminTel, mensajeAdmin, twilioAuth, twilioUrl, twilioFrom } }];"
+      }
+    },
+    {
+      "id": "f4-error-admin",
+      "name": "Avisar Error a Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.twilioUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $json.twilioAuth }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $json.twilioFrom }}" },
+            { "name": "To", "value": "=whatsapp:+{{ $json.adminTel }}" },
+            { "name": "Body", "value": "={{ $json.mensajeAdmin }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4-twilio",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Construir Prompt').first().json.twilioUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $('Construir Prompt').first().json.twilioAuth }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $('Construir Prompt').first().json.twilioFrom }}" },
+            { "name": "To", "value": "=whatsapp:+{{ $('Verificar Debounce').first().json.telefono }}" },
+            { "name": "Body", "value": "={{ $json.output }}" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Twilio": {
+      "main": [[{ "node": "Responder 200 a Twilio", "type": "main", "index": 0 }]]
+    },
+    "Responder 200 a Twilio": {
+      "main": [[{ "node": "Parsear Mensaje", "type": "main", "index": 0 }]]
+    },
+    "Parsear Mensaje": {
+      "main": [[{ "node": "Leer Configuracion", "type": "main", "index": 0 }]]
+    },
+    "Leer Configuracion": {
+      "main": [[{ "node": "IF Tipo Mensaje", "type": "main", "index": 0 }]]
+    },
+    "IF Tipo Mensaje": {
+      "main": [
+        [{ "node": "Preparar Auth Audio", "type": "main", "index": 0 }],
+        [{ "node": "Buscar Paciente", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Auth Audio": {
+      "main": [[{ "node": "Descargar Audio", "type": "main", "index": 0 }]]
+    },
+    "Descargar Audio": {
+      "main": [[{ "node": "Transcribir Groq", "type": "main", "index": 0 }]]
+    },
+    "Transcribir Groq": {
+      "main": [[{ "node": "Inyectar Texto", "type": "main", "index": 0 }]]
+    },
+    "Inyectar Texto": {
+      "main": [[{ "node": "Buscar Paciente", "type": "main", "index": 0 }]]
+    },
+    "Buscar Paciente": {
+      "main": [[{ "node": "Preparar Acumulacion", "type": "main", "index": 0 }]]
+    },
+    "Preparar Acumulacion": {
+      "main": [[{ "node": "Guardar Pendiente", "type": "main", "index": 0 }]]
+    },
+    "Guardar Pendiente": {
+      "main": [[{ "node": "Esperar 10 segundos", "type": "main", "index": 0 }]]
+    },
+    "Esperar 10 segundos": {
+      "main": [[{ "node": "Re-leer Paciente", "type": "main", "index": 0 }]]
+    },
+    "Re-leer Paciente": {
+      "main": [[{ "node": "Verificar Debounce", "type": "main", "index": 0 }]]
+    },
+    "Verificar Debounce": {
+      "main": [[{ "node": "Construir Prompt", "type": "main", "index": 0 }]]
+    },
+    "Construir Prompt": {
+      "main": [[{ "node": "Leer Historial Supabase", "type": "main", "index": 0 }]]
+    },
+    "Claude Haiku": {
+      "ai_languageModel": [[{ "node": "Agente Recepcionista", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Leer Historial Supabase": {
+      "main": [[{ "node": "Armar Historial", "type": "main", "index": 0 }]]
+    },
+    "Armar Historial": {
+      "main": [[{ "node": "Agente Recepcionista", "type": "main", "index": 0 }]]
+    },
+    "Tool Buscar Contexto": {
+      "ai_tool": [[{ "node": "Agente Recepcionista", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool Crear Turno": {
+      "ai_tool": [[{ "node": "Agente Recepcionista", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool Cancelar Turno": {
+      "ai_tool": [[{ "node": "Agente Recepcionista", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool Ver Disponibilidad": {
+      "ai_tool": [[{ "node": "Agente Recepcionista", "type": "ai_tool", "index": 0 }]]
+    },
+    "Agente Recepcionista": {
+      "main": [[{ "node": "Verificar Error Agente", "type": "main", "index": 0 }]]
+    },
+    "Verificar Error Agente": {
+      "main": [
+        [{ "node": "Avisar Error a Paciente", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Guardado Supabase", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Guardado Supabase": {
+      "main": [[{ "node": "Guardar en Supabase", "type": "main", "index": 0 }]]
+    },
+    "Guardar en Supabase": {
+      "main": [[{ "node": "Guardar Respuesta Agente", "type": "main", "index": 0 }]]
+    },
+    "Guardar Respuesta Agente": {
+      "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Avisar Error a Paciente": {
+      "main": [[{ "node": "Preparar Alerta Admin", "type": "main", "index": 0 }]]
+    },
+    "Preparar Alerta Admin": {
+      "main": [[{ "node": "Avisar Error a Admin", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  }
+}

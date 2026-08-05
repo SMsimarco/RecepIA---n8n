@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Simón</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --blue: #2563EB;
+      --blue-light: #EFF6FF;
+      --blue-dark: #1D4ED8;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --green: #16a34a;
+      --green-light: #f0fdf4;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 60px;
+    }
+
+    header {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-left h1 { font-size: 17px; font-weight: 600; }
+    .header-left span { font-size: 12px; color: var(--text-muted); }
+
+    .streak-badge {
+      background: var(--blue-light);
+      color: var(--blue);
+      border: 1px solid #BFDBFE;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .container { max-width: 880px; margin: 0 auto; padding: 28px 24px; }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      margin-top: 28px;
+    }
+
+    .section-title:first-child { margin-top: 0; }
+
+    /* Métricas */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    .metric-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      user-select: none;
+    }
+
+    .metric-card:hover { border-color: var(--blue); }
+
+    .metric-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+    .metric-value { font-size: 24px; font-weight: 700; line-height: 1; }
+    .metric-value.blue { color: var(--blue); }
+    .metric-value.green { color: var(--green); }
+    .metric-hint { font-size: 11px; color: var(--border); margin-top: 5px; }
+
+    /* Goals */
+    .goal-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 10px;
+    }
+
+    .goal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .goal-name { font-weight: 600; font-size: 14px; }
+    .goal-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+    .goal-numbers { text-align: right; }
+    .goal-current { font-size: 20px; font-weight: 700; color: var(--blue); }
+    .goal-current.green { color: var(--green); }
+    .goal-target { font-size: 11px; color: var(--text-muted); }
+
+    .progress-bg { background: var(--border); border-radius: 6px; height: 7px; overflow: hidden; }
+    .progress-fill { background: var(--blue); border-radius: 6px; height: 100%; transition: width 0.5s ease; }
+    .progress-fill.green { background: var(--green); }
+
+    .goal-edit-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 3px 8px;
+      margin-left: 8px;
+      transition: border-color 0.15s, color 0.15s;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+
+    .goal-edit-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    .goals-add-btn {
+      width: 100%;
+      background: none;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 12px;
+      margin-top: 4px;
+      transition: border-color 0.15s, color 0.15s;
+      font-family: inherit;
+    }
+
+    .goals-add-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* Log */
+    .log-input-area {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .log-date-label { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .log-textarea {
+      width: 100%;
+      border: none;
+      outline: none;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      resize: none;
+      min-height: 72px;
+      line-height: 1.6;
+      background: transparent;
+    }
+
+    .log-textarea::placeholder { color: #94a3b8; }
+
+    .log-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .log-hint { font-size: 11px; color: var(--text-muted); }
+
+    .btn-primary {
+      background: var(--blue);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover { background: var(--blue-dark); }
+
+    .log-entries { display: flex; flex-direction: column; gap: 8px; }
+
+    .log-entry {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      position: relative;
+    }
+
+    .log-entry-date { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
+    .log-entry-text { font-size: 14px; line-height: 1.6; color: var(--text); padding-right: 24px; }
+
+    .log-entry-delete {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: none;
+      border: none;
+      color: var(--border);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+      transition: color 0.15s;
+    }
+
+    .log-entry-delete:hover { color: #ef4444; }
+
+    .log-empty { text-align: center; padding: 28px; color: var(--text-muted); font-size: 14px; }
+
+    /* Principios */
+    .principles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .principle-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+
+    .principle-number { font-size: 10px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+    .principle-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 7px; }
+    .principle-body { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: white;
+      border-radius: 12px;
+      padding: 26px;
+      width: 340px;
+      max-width: 90vw;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    }
+
+    .modal h3 { font-size: 15px; font-weight: 700; margin-bottom: 18px; }
+
+    .modal-field { margin-bottom: 4px; }
+
+    .modal-field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .modal-field input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+      font-size: 16px;
+      font-family: inherit;
+      outline: none;
+      color: var(--text);
+      transition: border-color 0.15s;
+    }
+
+    .modal-field input:focus { border-color: var(--blue); }
+
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+
+    .btn-secondary {
+      flex: 1;
+      background: white;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 9px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+
+    .btn-secondary:hover { background: var(--bg); }
+    .modal-actions .btn-primary { flex: 1; }
+
+    /* Charts */
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin-bottom: 10px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .chart-title { font-weight: 600; font-size: 14px; }
+
+    .btn-outline {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-outline:hover { border-color: var(--blue); color: var(--blue); }
+
+    .chart-empty { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+
+    @media (max-width: 600px) {
+      header { padding: 14px 16px; }
+      .container { padding: 20px 14px; }
+      .metric-value { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Dashboard — Simón Marconi</h1>
+    <span id="header-date"></span>
+  </div>
+  <div class="streak-badge">🔥 <span id="streak-count">0</span> días seguidos</div>
+</header>
+
+<div class="container">
+
+  <div class="section-title">Métricas del mes</div>
+  <div class="metrics-grid">
+    <div class="metric-card" onclick="openModal('ingresoMes')">
+      <div class="metric-label">Ingreso este mes</div>
+      <div class="metric-value blue" id="val-ingresoMes">$0</div>
+      <div class="metric-hint">Clic para editar</div>
+    </div>
+    <div class="metric-card" onclick="openModal('ahorroTotal')">
+      <div class="metric-label">Ahorro total (USD)</div>
+      <div class="metric-value green" id="val-ahorroTotal">$0</div>
+      <div class="metric-hint">Clic para editar</div>
+    </div>
+    <div class="metric-card" onclick="openModal('clientesPropios')">
+      <div class="metric-label">Clientes propios</div>
+      <div class="metric-value" id="val-clientesPropios">0</div>
+      <div class="metric-hint">Clic para editar</div>
+    </div>
+    <div class="metric-card" onclick="openModal('proyectosActivos')">
+      <div class="metric-label">Proyectos activos</div>
+      <div class="metric-value" id="val-proyectosActivos">0</div>
+      <div class="metric-hint">Clic para editar</div>
+    </div>
+  </div>
+
+  <div class="section-title">Progreso hacia metas</div>
+
+  <div id="goals-list"></div>
+  <button class="goals-add-btn" onclick="agregarObjetivo()">+ Nuevo objetivo</button>
+
+  <div class="section-title">Log diario — ¿qué hice hoy que me acercó al objetivo?</div>
+
+  <div class="log-input-area">
+    <div class="log-date-label" id="log-today-label"></div>
+    <textarea
+      class="log-textarea"
+      id="log-input"
+      placeholder="Sé específico: un cliente contactado, una propuesta enviada, algo aprendido aplicado, dinero ahorrado, una conversación que abrió una puerta..."
+    ></textarea>
+    <div class="log-actions">
+      <span class="log-hint">Ctrl + Enter para guardar</span>
+      <button class="btn-primary" onclick="guardarEntrada()">Guardar</button>
+    </div>
+  </div>
+
+  <div class="log-entries" id="log-entries-list">
+    <div class="log-empty">Todavía no hay entradas. Empezá hoy.</div>
+  </div>
+
+  <div class="section-title">Evolución mensual</div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">Ingreso mensual (USD)</div>
+      <button class="btn-outline" onclick="registrarMes()">Cerrar mes actual</button>
+    </div>
+    <div id="chart-ingreso-wrap">
+      <div class="chart-empty">Cerrá el mes para empezar a ver tu evolución.</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">Entradas al log (últimos 30 días)</div>
+    </div>
+    <div id="chart-log-wrap">
+      <div class="chart-empty">Empezá a escribir en el log para ver tu actividad.</div>
+    </div>
+  </div>
+
+  <div class="section-title">Leyes del éxito</div>
+  <div class="principles-grid" id="principles-grid"></div>
+
+</div>
+
+<!-- Modal editar objetivo -->
+<div class="modal-overlay" id="goal-modal-overlay">
+  <div class="modal">
+    <h3 id="goal-modal-title">Objetivo</h3>
+    <div class="modal-field" style="margin-bottom:14px">
+      <label>Nombre del objetivo</label>
+      <input type="text" id="goal-modal-nombre" placeholder="Ej: Primer cliente propio" maxlength="60" />
+    </div>
+    <div class="modal-field" style="margin-bottom:14px">
+      <label>Valor actual</label>
+      <input type="number" id="goal-modal-actual" min="0" step="any" placeholder="0" />
+    </div>
+    <div class="modal-field">
+      <label>Meta (número)</label>
+      <input type="number" id="goal-modal-meta" min="1" step="any" placeholder="500" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeGoalModal()">Cancelar</button>
+      <button class="btn-secondary" style="color:#ef4444;border-color:#fecaca" onclick="eliminarObjetivo()">Eliminar</button>
+      <button class="btn-primary" onclick="guardarObjetivo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal editar métrica -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Actualizar</h3>
+    <div class="modal-field">
+      <label id="modal-label">Valor</label>
+      <input type="number" id="modal-input" min="0" step="any" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarMetrica()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Principios ──────────────────────────────────────────────
+  const PRINCIPIOS = [
+    {
+      numero: "Ley 1",
+      titulo: "Causa y Efecto",
+      cuerpo: "Nada pasa por accidente. Cada resultado tiene una causa exacta. Si querés resultados distintos, cambiá las acciones. Buscá qué hacen diferente los que ya tienen lo que vos querés."
+    },
+    {
+      numero: "Ley 2",
+      titulo: "Acumulación",
+      cuerpo: "El éxito es la suma de acciones pequeñas repetidas con constancia. Lo que parece imposible hoy se logra en cuotas. No buscás el salto, buscás la racha."
+    },
+    {
+      numero: "Ley 3",
+      titulo: "Compensación",
+      cuerpo: "Ganás en proporción directa al valor que das. Para ganar más, primero tenés que servir mejor. El dinero es la consecuencia de haber resuelto bien un problema real."
+    },
+    {
+      numero: "Ley 4",
+      titulo: "Enfoque",
+      cuerpo: "La persona enfocada siempre le gana a la dispersa, sin importar el talento. Un objetivo claro, una acción por día. La concentración es el multiplicador más poderoso."
+    },
+    {
+      numero: "Ley 5",
+      titulo: "El Activo",
+      cuerpo: "Los que construyen riqueza construyen activos, no venden tiempo. Preguntate siempre: ¿esto funciona sin mí? Si no, seguís siendo empleado de tu propia empresa."
+    },
+    {
+      numero: "Ley 6",
+      titulo: "Las Ventas",
+      cuerpo: "Si no podés vender, no podés construir nada. Vender es comunicar valor de forma que el otro lo entienda. No es manipular: es servir bien y cobrar lo que corresponde."
+    },
+    {
+      numero: "Ley 7",
+      titulo: "El 1% Diario",
+      cuerpo: "Mejorar 1% cada día te hace 37 veces mejor en un año. El progreso compuesto es invisible al principio y aplastante al final. La constancia vence al talento."
+    },
+    {
+      numero: "Ley 8",
+      titulo: "El Nicho",
+      cuerpo: "El que sirve a todos no sirve bien a nadie. Ser el mejor en un nicho chico vale más que ser mediocre en uno grande. La especialización es poder real."
+    },
+    {
+      numero: "Ley 9",
+      titulo: "La Claridad",
+      cuerpo: "El 80% del éxito está en tener total claridad de qué querés exactamente, por qué lo querés y el precio que estás dispuesto a pagar. La confusión es el enemigo número uno."
+    },
+    {
+      numero: "Ley 10",
+      titulo: "La Acción Masiva",
+      cuerpo: "Las personas exitosas actúan diez veces más de lo que creen necesario. Cuando dudás, hacé. La acción genera información. La parálisis no genera nada."
+    }
+  ];
+
+  // ── Storage ──────────────────────────────────────────────────
+  const OBJETIVOS_DEFAULT = [
+    { id: 1, nombre: "Primer ingreso propio", meta: 500, actual: 0 },
+    { id: 2, nombre: "Primer ahorro en USD", meta: 300, actual: 0 }
+  ];
+
+  function cargarDatos() {
+    const raw = localStorage.getItem('dashboard-simon-v1');
+    if (!raw) return {
+      metricas: { ingresoMes: 0, ahorroTotal: 0, clientesPropios: 0, proyectosActivos: 0 },
+      objetivos: OBJETIVOS_DEFAULT,
+      entradas: []
+    };
+    const data = JSON.parse(raw);
+    if (!data.objetivos) data.objetivos = OBJETIVOS_DEFAULT;
+    if (!data.historial) data.historial = [];
+    return data;
+  }
+
+  function guardarDatos(data) {
+    localStorage.setItem('dashboard-simon-v1', JSON.stringify(data));
+  }
+
+  // ── Utils ────────────────────────────────────────────────────
+  function hoyStr() {
+    const ahora = new Date();
+    const y = ahora.getFullYear();
+    const m = String(ahora.getMonth() + 1).padStart(2, '0');
+    const d = String(ahora.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function mesActualStr() {
+    const ahora = new Date();
+    return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  function formatUSD(n) {
+    return '$' + Number(n).toLocaleString('es-AR');
+  }
+
+  function formatFecha(fechaStr) {
+    const [y, m, d] = fechaStr.split('-').map(Number);
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+    const fecha = new Date(y, m - 1, d);
+    return `${dias[fecha.getDay()]} ${d} de ${meses[m-1]} ${y}`;
+  }
+
+  function calcularStreak(entradas) {
+    if (!entradas || entradas.length === 0) return 0;
+    const fechasUnicas = [...new Set(entradas.map(e => e.fecha))].sort().reverse();
+    const hoy = hoyStr();
+    const ayer = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const ultima = fechasUnicas[0];
+    if (ultima !== hoy && ultima !== ayer) return 0;
+    let racha = 1;
+    for (let i = 1; i < fechasUnicas.length; i++) {
+      const diff = (new Date(fechasUnicas[i-1]) - new Date(fechasUnicas[i])) / 86400000;
+      if (diff === 1) racha++;
+      else break;
+    }
+    return racha;
+  }
+
+  // ── Render ───────────────────────────────────────────────────
+  function render() {
+    const data = cargarDatos();
+    const m = data.metricas;
+
+    // Header fecha
+    const ahora = new Date();
+    const opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const fechaStr = ahora.toLocaleDateString('es-AR', opciones);
+    document.getElementById('header-date').textContent = fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1);
+    document.getElementById('log-today-label').textContent = 'Hoy · ' + formatFecha(hoyStr());
+
+    // Streak
+    document.getElementById('streak-count').textContent = calcularStreak(data.entradas);
+
+    // Métricas
+    document.getElementById('val-ingresoMes').textContent = formatUSD(m.ingresoMes);
+    document.getElementById('val-ahorroTotal').textContent = formatUSD(m.ahorroTotal);
+    document.getElementById('val-clientesPropios').textContent = m.clientesPropios;
+    document.getElementById('val-proyectosActivos').textContent = m.proyectosActivos;
+
+    // Objetivos
+    renderObjetivos(data);
+
+    // Charts
+    renderChartIngreso(data);
+    renderChartLog(data);
+
+    // Log entries
+    renderEntradas(data);
+
+    // Principios (solo primera vez)
+    if (!document.getElementById('principles-grid').hasChildNodes()) {
+      renderPrincipios();
+    }
+  }
+
+  function renderEntradas(data) {
+    const lista = document.getElementById('log-entries-list');
+    if (!data.entradas || data.entradas.length === 0) {
+      lista.innerHTML = '<div class="log-empty">Todavía no hay entradas. Empezá hoy.</div>';
+      return;
+    }
+    const ordenadas = [...data.entradas].sort((a, b) => b.id - a.id);
+    lista.innerHTML = ordenadas.map(e => `
+      <div class="log-entry" id="entry-${e.id}">
+        <button class="log-entry-delete" onclick="eliminarEntrada(${e.id})" title="Eliminar">×</button>
+        <div class="log-entry-date">${formatFecha(e.fecha)}</div>
+        <div class="log-entry-text">${e.texto.replace(/\n/g, '<br>')}</div>
+      </div>
+    `).join('');
+  }
+
+  const COLORES = ['blue', 'green', '', 'blue', 'green'];
+
+  function renderObjetivos(data) {
+    const lista = document.getElementById('goals-list');
+    if (!data.objetivos || data.objetivos.length === 0) {
+      lista.innerHTML = '';
+      return;
+    }
+    lista.innerHTML = data.objetivos.map((obj, i) => {
+      const pct = Math.min((obj.actual / obj.meta) * 100, 100).toFixed(1);
+      const resta = Math.max(obj.meta - obj.actual, 0);
+      const colorClass = i % 2 === 0 ? '' : 'green';
+      const sub = resta > 0
+        ? `Faltan ${formatUSD(resta)} · ${pct}% alcanzado`
+        : '¡Objetivo alcanzado!';
+      return `
+        <div class="goal-card">
+          <div class="goal-header">
+            <div>
+              <div class="goal-name">
+                ${obj.nombre}
+                <button class="goal-edit-btn" onclick="openGoalModal(${obj.id})">editar</button>
+              </div>
+              <div class="goal-sub">${sub}</div>
+            </div>
+            <div class="goal-numbers">
+              <div class="goal-current ${colorClass}">${formatUSD(obj.actual)}</div>
+              <div class="goal-target">meta: ${formatUSD(obj.meta)}</div>
+            </div>
+          </div>
+          <div class="progress-bg">
+            <div class="progress-fill ${colorClass}" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function agregarObjetivo() {
+    const data = cargarDatos();
+    const nuevoId = Date.now();
+    data.objetivos.push({ id: nuevoId, nombre: 'Nuevo objetivo', meta: 1000, actual: 0 });
+    guardarDatos(data);
+    render();
+    openGoalModal(nuevoId);
+  }
+
+  // ── Modal objetivos ──────────────────────────────────────────
+  let goalModalId = null;
+
+  function openGoalModal(id) {
+    const data = cargarDatos();
+    const obj = data.objetivos.find(o => o.id === id);
+    if (!obj) return;
+    goalModalId = id;
+    document.getElementById('goal-modal-title').textContent = 'Editar objetivo';
+    document.getElementById('goal-modal-nombre').value = obj.nombre;
+    document.getElementById('goal-modal-actual').value = obj.actual;
+    document.getElementById('goal-modal-meta').value = obj.meta;
+    document.getElementById('goal-modal-overlay').classList.add('open');
+    setTimeout(() => document.getElementById('goal-modal-nombre').focus(), 50);
+  }
+
+  function closeGoalModal() {
+    document.getElementById('goal-modal-overlay').classList.remove('open');
+    goalModalId = null;
+  }
+
+  function guardarObjetivo() {
+    if (!goalModalId) return;
+    const nombre = document.getElementById('goal-modal-nombre').value.trim() || 'Objetivo';
+    const actual = parseFloat(document.getElementById('goal-modal-actual').value) || 0;
+    const meta = parseFloat(document.getElementById('goal-modal-meta').value) || 1;
+    const data = cargarDatos();
+    const obj = data.objetivos.find(o => o.id === goalModalId);
+    if (obj) { obj.nombre = nombre; obj.actual = actual; obj.meta = meta; }
+    guardarDatos(data);
+    render();
+    closeGoalModal();
+  }
+
+  function eliminarObjetivo() {
+    if (!goalModalId) return;
+    const data = cargarDatos();
+    data.objetivos = data.objetivos.filter(o => o.id !== goalModalId);
+    guardarDatos(data);
+    render();
+    closeGoalModal();
+  }
+
+  function renderPrincipios() {
+    document.getElementById('principles-grid').innerHTML = PRINCIPIOS.map(p => `
+      <div class="principle-card">
+        <div class="principle-number">${p.numero}</div>
+        <div class="principle-title">${p.titulo}</div>
+        <div class="principle-body">${p.cuerpo}</div>
+      </div>
+    `).join('');
+  }
+
+  // ── Gráficos ────────────────────────────────────────────────
+  const MESES_CORTOS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  let chartIngreso = null;
+  let chartLog = null;
+
+  function labelMes(mesStr) {
+    const [y, m] = mesStr.split('-');
+    return `${MESES_CORTOS[parseInt(m) - 1]} ${y}`;
+  }
+
+  function renderChartIngreso(data) {
+    const wrap = document.getElementById('chart-ingreso-wrap');
+    if (!data.historial || data.historial.length === 0) {
+      wrap.innerHTML = '<div class="chart-empty">Cerrá el mes para empezar a ver tu evolución.</div>';
+      if (chartIngreso) { chartIngreso.destroy(); chartIngreso = null; }
+      return;
+    }
+    if (!wrap.querySelector('canvas')) {
+      wrap.innerHTML = '<canvas id="chart-ingreso" height="110"></canvas>';
+    }
+    const ctx = document.getElementById('chart-ingreso');
+    if (chartIngreso) chartIngreso.destroy();
+    chartIngreso = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.historial.map(h => labelMes(h.mes)),
+        datasets: [{
+          label: 'Ingreso USD',
+          data: data.historial.map(h => h.ingreso),
+          backgroundColor: '#2563EB',
+          borderRadius: 6,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          label: ctx => `$${ctx.parsed.y.toLocaleString('es-AR')} USD`
+        }}},
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString('es-AR') }, grid: { color: '#f1f5f9' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function renderChartLog(data) {
+    const wrap = document.getElementById('chart-log-wrap');
+    if (!data.entradas || data.entradas.length === 0) {
+      wrap.innerHTML = '<div class="chart-empty">Empezá a escribir en el log para ver tu actividad.</div>';
+      if (chartLog) { chartLog.destroy(); chartLog = null; }
+      return;
+    }
+
+    // Últimos 30 días
+    const hoy = new Date(hoyStr());
+    const labels = [];
+    const counts = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(hoy);
+      d.setDate(hoy.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const dia = d.getDate();
+      const mes = MESES_CORTOS[d.getMonth()];
+      labels.push(dia === 1 || i === 29 ? `${dia} ${mes}` : String(dia));
+      counts.push(data.entradas.filter(e => e.fecha === key).length);
+    }
+
+    if (!wrap.querySelector('canvas')) {
+      wrap.innerHTML = '<canvas id="chart-log" height="80"></canvas>';
+    }
+    const ctx = document.getElementById('chart-log');
+    if (chartLog) chartLog.destroy();
+    chartLog = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: counts,
+          backgroundColor: counts.map(c => c > 0 ? '#16a34a' : '#e2e8f0'),
+          borderRadius: 4,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          label: ctx => `${ctx.parsed.y} entrada${ctx.parsed.y !== 1 ? 's' : ''}`
+        }}},
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#f1f5f9' } },
+          x: { grid: { display: false }, ticks: { maxRotation: 0, font: { size: 10 } } }
+        }
+      }
+    });
+  }
+
+  function registrarMes() {
+    const data = cargarDatos();
+    const mes = mesActualStr();
+    const existente = data.historial.findIndex(h => h.mes === mes);
+    const entrada = { mes, ingreso: data.metricas.ingresoMes, ahorro: data.metricas.ahorroTotal };
+    if (existente >= 0) {
+      if (!confirm(`Ya registraste ${labelMes(mes)}. ¿Sobreescribir con los valores actuales?`)) return;
+      data.historial[existente] = entrada;
+    } else {
+      data.historial.push(entrada);
+      data.historial.sort((a, b) => a.mes.localeCompare(b.mes));
+    }
+    guardarDatos(data);
+    render();
+  }
+
+  // ── Acciones log ─────────────────────────────────────────────
+  function guardarEntrada() {
+    const input = document.getElementById('log-input');
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    const data = cargarDatos();
+    if (!data.entradas) data.entradas = [];
+    data.entradas.push({ id: Date.now(), fecha: hoyStr(), texto });
+    guardarDatos(data);
+    input.value = '';
+    render();
+  }
+
+  function eliminarEntrada(id) {
+    const data = cargarDatos();
+    data.entradas = data.entradas.filter(e => e.id !== id);
+    guardarDatos(data);
+    render();
+  }
+
+  // ── Modal métricas ───────────────────────────────────────────
+  let modalKey = null;
+  const MODAL_CONFIG = {
+    ingresoMes:       { titulo: 'Ingreso este mes',           label: 'Monto en USD' },
+    ahorroTotal:      { titulo: 'Ahorro total acumulado',     label: 'Monto en USD' },
+    clientesPropios:  { titulo: 'Clientes propios activos',   label: 'Cantidad' },
+    proyectosActivos: { titulo: 'Proyectos en construcción',  label: 'Cantidad' }
+  };
+
+  function openModal(key) {
+    modalKey = key;
+    const cfg = MODAL_CONFIG[key];
+    const data = cargarDatos();
+    document.getElementById('modal-title').textContent = cfg.titulo;
+    document.getElementById('modal-label').textContent = cfg.label;
+    document.getElementById('modal-input').value = data.metricas[key] || '';
+    document.getElementById('modal-overlay').classList.add('open');
+    setTimeout(() => document.getElementById('modal-input').focus(), 50);
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    modalKey = null;
+  }
+
+  function guardarMetrica() {
+    if (!modalKey) return;
+    const valor = parseFloat(document.getElementById('modal-input').value) || 0;
+    const data = cargarDatos();
+    data.metricas[modalKey] = valor;
+    guardarDatos(data);
+    render();
+    closeModal();
+  }
+
+  // ── Eventos ──────────────────────────────────────────────────
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  document.getElementById('goal-modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeGoalModal();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal(); closeGoalModal(); }
+    if (e.key === 'Enter' && modalKey) { e.preventDefault(); guardarMetrica(); }
+  });
+
+  document.getElementById('log-input').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') guardarEntrada();
+  });
+
+  // ── Init ─────────────────────────────────────────────────────
+  render();
+</script>
+
+</body>
+</html>

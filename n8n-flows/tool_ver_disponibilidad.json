@@ -1,0 +1,44 @@
+{
+  "name": "Tool - Ver Disponibilidad",
+  "nodes": [
+    {
+      "id": "vd-trigger",
+      "name": "Recibir Datos",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": { "inputSource": "passthrough" }
+    },
+    {
+      "id": "vd-leer-turnos",
+      "name": "Leer Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [460, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "vd-calcular",
+      "name": "Calcular Slots Libres",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $('Recibir Datos').first().json;\nconst d = raw.fecha != null ? raw : JSON.parse(raw.query || '{}');\nconst valido = v => v != null && String(v).trim() !== '' && String(v) !== 'undefined' && String(v) !== 'null';\nif (!valido(d.fecha)) return [{ json: { resultado: 'ERROR: no se recibió una fecha válida. Indicá la fecha en formato YYYY-MM-DD.' } }];\nconst fecha = String(d.fecha).trim();\n\nconst [year, month, day] = fecha.split('-').map(Number);\nconst dateObj = new Date(year, month - 1, day);\nconst dow = dateObj.getDay();\n\nif (dow === 0) {\n  return [{ json: { resultado: 'El consultorio no atiende los domingos. Podés consultar de lunes a sábado.' } }];\n}\n\nconst endMin = dow === 6 ? 780 : 1260;\nconst allSlots = [];\nfor (let m = 480; m + 45 <= endMin; m += 45) {\n  allSlots.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));\n}\n\nconst busyStates = ['PENDIENTE', 'CONFIRMADO', 'RECORDATORIO_ENVIADO'];\nconst occupied = $input.all()\n  .filter(i => i.json.fecha === fecha && busyStates.includes(i.json.estado_turno))\n  .map(i => i.json.hora);\n\nconst free = allSlots.filter(s => !occupied.includes(s));\n\nconst resultado = free.length === 0\n  ? 'No hay turnos disponibles para el ' + fecha + '. ¿Querés que verifique otro día?'\n  : 'Los horarios disponibles para el ' + fecha + ' son: ' + free.join(', ') + '. ¿Cuál preferís?';\n\nreturn [{ json: { resultado } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Recibir Datos": { "main": [[{ "node": "Leer Turnos", "type": "main", "index": 0 }]] },
+    "Leer Turnos": { "main": [[{ "node": "Calcular Slots Libres", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

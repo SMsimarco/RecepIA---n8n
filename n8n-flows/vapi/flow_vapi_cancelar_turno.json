@@ -1,0 +1,213 @@
+{
+  "name": "vapi-cancelar-turno",
+  "nodes": [
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c301",
+      "name": "Webhook Vapi Cancelar Turno",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-cancelar-turno",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c302",
+      "name": "Extraer Datos Cancelacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const toolCall = $input.first().json.body.message.toolCalls[0];\nconst args = toolCall.function.arguments;\nconst toolCallId = toolCall.id;\nconst nombre = args.nombre || '';\nconst fecha = args.fecha || '';\nconst telefono = args.telefono || '';\nconst turno_id = telefono + '_' + fecha;\nconst fechaHoy = new Date().toISOString().split('T')[0];\nreturn [{ json: { toolCallId, nombre, fecha, telefono, turno_id, fechaHoy } }];"
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c303",
+      "name": "Leer Turnos para Cancelar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Turnos",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c304",
+      "name": "Encontrar y Cancelar Fila",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const turno_id = $('Extraer Datos Cancelacion').first().json.turno_id;\nconst telefono = $('Extraer Datos Cancelacion').first().json.telefono;\nconst fecha = $('Extraer Datos Cancelacion').first().json.fecha;\nconst nombre = $('Extraer Datos Cancelacion').first().json.nombre;\nconst toolCallId = $('Extraer Datos Cancelacion').first().json.toolCallId;\nconst fechaHoy = $('Extraer Datos Cancelacion').first().json.fechaHoy;\n\nconst filas = $input.all();\nconst turnoExiste = filas.some(i => i.json.turno_id === turno_id);\n\nreturn [{ json: { turno_id, telefono, fecha, nombre, toolCallId, fechaHoy, turnoExiste } }];"
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c305",
+      "name": "Cancelar en Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1120, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Turnos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $json.turno_id }}",
+            "estado_turno": "CANCELADO"
+          },
+          "matchingColumns": ["turno_id"],
+          "schema": [
+            { "id": "turno_id", "displayName": "turno_id", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado_turno", "displayName": "estado_turno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c306",
+      "name": "Actualizar Paciente Cancelado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1340, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Pacientes",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Extraer Datos Cancelacion').first().json.telefono }}",
+            "estado": "CANCELADO",
+            "fechaUltimoContacto": "={{ $('Extraer Datos Cancelacion').first().json.fechaHoy }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado", "displayName": "estado", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "fechaUltimoContacto", "displayName": "fechaUltimoContacto", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c307",
+      "name": "Construir Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Extraer Datos Cancelacion').first().json.toolCallId;\nconst nombre = $('Extraer Datos Cancelacion').first().json.nombre;\nconst fecha = $('Extraer Datos Cancelacion').first().json.fecha;\nconst turnoExiste = $('Encontrar y Cancelar Fila').first().json.turnoExiste;\n\nconst result = turnoExiste\n  ? 'El turno de ' + nombre + ' para el ' + fecha + ' fue cancelado correctamente. ¿Querés que te busque otro hueco?'\n  : 'No encontré un turno registrado para ' + nombre + ' el ' + fecha + '. ¿Podés verificar la fecha?';\n\nreturn [{ json: { results: [{ toolCallId, result }] } }];"
+      }
+    },
+    {
+      "id": "c3c3c3c3-0003-0003-0003-c3c3c3c3c308",
+      "name": "Responder a Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Vapi Cancelar Turno": {
+      "main": [
+        [{ "node": "Extraer Datos Cancelacion", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extraer Datos Cancelacion": {
+      "main": [
+        [{ "node": "Leer Turnos para Cancelar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Leer Turnos para Cancelar": {
+      "main": [
+        [{ "node": "Encontrar y Cancelar Fila", "type": "main", "index": 0 }]
+      ]
+    },
+    "Encontrar y Cancelar Fila": {
+      "main": [
+        [{ "node": "Cancelar en Turnos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Cancelar en Turnos": {
+      "main": [
+        [{ "node": "Actualizar Paciente Cancelado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Actualizar Paciente Cancelado": {
+      "main": [
+        [{ "node": "Construir Respuesta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Construir Respuesta": {
+      "main": [
+        [{ "node": "Responder a Vapi", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

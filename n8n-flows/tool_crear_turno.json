@@ -1,0 +1,126 @@
+{
+  "name": "Tool - Crear Turno",
+  "nodes": [
+    {
+      "id": "ct-trigger",
+      "name": "Recibir Datos",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": { "inputSource": "passthrough" }
+    },
+    {
+      "id": "ct-leer-turnos",
+      "name": "Leer Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [460, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "ct-extraer",
+      "name": "Preparar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "jsCode": "const raw = $('Recibir Datos').first().json;\nconst d = raw.telefono != null ? raw : JSON.parse(raw.query || '{}');\nconst valido = v => v != null && String(v).trim() !== '' && String(v) !== 'undefined' && String(v) !== 'null';\nif (!valido(d.telefono) || !valido(d.nombre) || !valido(d.fecha) || !valido(d.hora)) {\n  throw new Error('Datos incompletos para crear turno. Necesito: nombre=' + d.nombre + ', telefono=' + d.telefono + ', fecha=' + d.fecha + ', hora=' + d.hora + '. Pedile al paciente que confirme los datos faltantes.');\n}\nconst normTel = t => { let s = String(t).replace(/\\D/g, ''); if (s.startsWith('54')) s = s.slice(2); if (s.startsWith('9') && s.length >= 10) s = s.slice(1); return s; };\nconst normHora = h => { const s = String(h).trim(); if (/^\\d{1,2}$/.test(s)) return s.padStart(2, '0') + ':00'; if (/^\\d{1,2}:\\d{2}$/.test(s)) return s.padStart(5, '0'); return s; };\nconst telefono = normTel(d.telefono);\nconst hora = normHora(d.hora);\nconst fechaHoy = new Date().toISOString().split('T')[0];\nif (d.fecha < fechaHoy) {\n  throw new Error('La fecha ' + d.fecha + ' ya pasó. Solo se pueden crear turnos para fechas futuras.');\n}\nconst busyStates = ['PENDIENTE','CONFIRMADO','RECORDATORIO_ENVIADO'];\nconst turnos = $('Leer Turnos').all();\nconst slotOcupado = turnos.some(i => i.json.fecha === d.fecha && i.json.hora === hora && busyStates.includes(i.json.estado_turno));\nif (slotOcupado) {\n  throw new Error('El horario ' + hora + ' del ' + d.fecha + ' ya está ocupado. Llamá a ver_disponibilidad para ver los horarios libres de ese día.');\n}\nconst turno_id = telefono + '_' + d.fecha + '_' + hora;\nreturn [{ json: { nombre: d.nombre, fecha: d.fecha, hora, servicio: d.servicio || 'Consulta general', telefono, turno_id, fechaHoy } }];"
+      }
+    },
+    {
+      "id": "ct-guardar-turnos",
+      "name": "Guardar en Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [900, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $json.turno_id }}",
+            "telefono": "={{ $json.telefono }}",
+            "nombre": "={{ $json.nombre }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "servicio": "={{ $json.servicio }}",
+            "estado_turno": "CONFIRMADO"
+          },
+          "matchingColumns": ["turno_id"],
+          "schema": [
+            { "id": "turno_id", "displayName": "turno_id", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "nombre", "displayName": "nombre", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "fecha", "displayName": "fecha", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "hora", "displayName": "hora", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "servicio", "displayName": "servicio", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado_turno", "displayName": "estado_turno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "ct-actualizar-paciente",
+      "name": "Actualizar Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1120, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Pacientes", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Preparar Datos').first().json.telefono }}",
+            "nombre": "={{ $('Preparar Datos').first().json.nombre }}",
+            "proximoTurno": "={{ $('Preparar Datos').first().json.fecha + ' ' + $('Preparar Datos').first().json.hora }}",
+            "estado": "CONFIRMADO",
+            "fechaUltimoContacto": "={{ $('Preparar Datos').first().json.fechaHoy }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "nombre", "displayName": "nombre", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "proximoTurno", "displayName": "proximoTurno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "estado", "displayName": "estado", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "fechaUltimoContacto", "displayName": "fechaUltimoContacto", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "ct-respuesta",
+      "name": "Construir Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "parameters": {
+        "jsCode": "const d = $('Preparar Datos').first().json;\nreturn [{ json: { resultado: 'Turno creado correctamente para ' + d.nombre + ' el ' + d.fecha + ' a las ' + d.hora + 'hs (' + d.servicio + ').' } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Recibir Datos": { "main": [[{ "node": "Leer Turnos", "type": "main", "index": 0 }]] },
+    "Leer Turnos": { "main": [[{ "node": "Preparar Datos", "type": "main", "index": 0 }]] },
+    "Preparar Datos": { "main": [[{ "node": "Guardar en Turnos", "type": "main", "index": 0 }]] },
+    "Guardar en Turnos": { "main": [[{ "node": "Actualizar Paciente", "type": "main", "index": 0 }]] },
+    "Actualizar Paciente": { "main": [[{ "node": "Construir Respuesta", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

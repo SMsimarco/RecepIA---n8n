@@ -1,0 +1,60 @@
+{
+  "name": "Tool - Buscar Contexto Paciente",
+  "nodes": [
+    {
+      "id": "tc-trigger",
+      "name": "Recibir Datos",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": { "inputSource": "passthrough" }
+    },
+    {
+      "id": "tc-leer-pacientes",
+      "name": "Leer Pacientes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [460, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Pacientes", "mode": "name" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "tc-leer-turnos",
+      "name": "Leer Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Turnos", "mode": "name" },
+        "options": {}
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "1", "name": "Google Sheets Account" } }
+    },
+    {
+      "id": "tc-procesar",
+      "name": "Construir Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $('Recibir Datos').first().json;\nconst d = raw.telefono != null ? raw : JSON.parse(raw.query || '{}');\nconst valido = v => v != null && String(v).trim() !== '' && String(v) !== 'undefined' && String(v) !== 'null';\nconst telefono = valido(d.telefono) ? String(d.telefono).trim() : null;\nif (!telefono) return [{ json: { resultado: 'ERROR: no se recibió un teléfono válido. Revisá que el mensaje incluye [TELEFONO].' } }];\n\n// Normaliza teléfonos argentinos: quita el 54 del principio y el 9 de celular\n// Permite comparar 5492494621486, 2494621486, 492494621486, etc.\nconst normTel = t => {\n  let s = String(t).replace(/\\D/g, '');\n  if (s.startsWith('54')) s = s.slice(2);\n  if (s.startsWith('9') && s.length >= 10) s = s.slice(1);\n  return s;\n};\nconst telNorm = normTel(telefono);\n\nconst hoy = new Date().toISOString().split('T')[0];\n\nconst pacientes = $('Leer Pacientes').all();\nconst paciente = pacientes.find(i => normTel(i.json.telefono) === telNorm)?.json || {};\n\nconst turnos = $('Leer Turnos').all();\nconst busyStates = ['PENDIENTE','CONFIRMADO','RECORDATORIO_ENVIADO'];\n\nconst turnoActivo = turnos\n  .filter(i => normTel(i.json.telefono) === telNorm && busyStates.includes(i.json.estado_turno) && i.json.fecha >= hoy)\n  .sort((a,b) => a.json.fecha > b.json.fecha ? 1 : -1)[0]?.json || null;\n\nconst ocupadosPorFecha = {};\nturnos.forEach(t => {\n  if (busyStates.includes(t.json.estado_turno)) {\n    if (!ocupadosPorFecha[t.json.fecha]) ocupadosPorFecha[t.json.fecha] = 0;\n    ocupadosPorFecha[t.json.fecha]++;\n  }\n});\n\nconst diasDisponibles = [];\nfor (let offset = 1; offset <= 14; offset++) {\n  const dt = new Date();\n  dt.setDate(dt.getDate() + offset);\n  const dow = dt.getDay();\n  if (dow === 0) continue;\n  const fechaStr = dt.toISOString().split('T')[0];\n  const endMin = dow === 6 ? 780 : 1260;\n  const maxSlots = Math.floor((endMin - 480) / 45);\n  const ocupados = ocupadosPorFecha[fechaStr] || 0;\n  if (ocupados < maxSlots) {\n    const dias = ['dom','lun','mar','mié','jue','vie','sáb'];\n    diasDisponibles.push(`${dias[dow]} ${fechaStr.slice(8)}/${fechaStr.slice(5,7)} (${fechaStr})`);\n  }\n}\n\nlet resultado = `Paciente: ${paciente.nombre || 'No registrado'} | Estado: ${paciente.estado || 'NUEVO'}\\n`;\nresultado += turnoActivo\n  ? `Turno activo: ${turnoActivo.fecha} a las ${turnoActivo.hora} (${turnoActivo.servicio || 'Consulta'})\\n`\n  : 'Sin turno activo\\n';\nresultado += diasDisponibles.length > 0\n  ? 'Días con disponibilidad próximos 7 días: ' + diasDisponibles.join(', ')\n  : 'Sin disponibilidad en los próximos 7 días';\n\nreturn [{ json: { resultado } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Recibir Datos": { "main": [[{ "node": "Leer Pacientes", "type": "main", "index": 0 }]] },
+    "Leer Pacientes": { "main": [[{ "node": "Leer Turnos", "type": "main", "index": 0 }]] },
+    "Leer Turnos": { "main": [[{ "node": "Construir Contexto", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

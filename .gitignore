@@ -1,0 +1,6 @@
+dashboard/
+landing-page/
+config_clinica.csv
+primer_flujo_corregido.json
+node_modules/
+.env

@@ -1,0 +1,106 @@
+{
+  "name": "vapi-disponibilidad",
+  "nodes": [
+    {
+      "id": "a1a1a1a1-0001-0001-0001-a1a1a1a1a101",
+      "name": "Webhook Vapi Disponibilidad",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-disponibilidad",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "a1a1a1a1-0001-0001-0001-a1a1a1a1a102",
+      "name": "Extraer Fecha y ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const toolCall = $input.first().json.body.message.toolCalls[0];\nconst fecha = toolCall.function.arguments.fecha;\nconst toolCallId = toolCall.id;\nreturn [{ json: { fecha, toolCallId } }];"
+      }
+    },
+    {
+      "id": "a1a1a1a1-0001-0001-0001-a1a1a1a1a103",
+      "name": "Leer Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Turnos",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "a1a1a1a1-0001-0001-0001-a1a1a1a1a104",
+      "name": "Calcular Slots Libres",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const fecha = $('Extraer Fecha y ID').first().json.fecha;\nconst toolCallId = $('Extraer Fecha y ID').first().json.toolCallId;\n\nconst [year, month, day] = fecha.split('-').map(Number);\nconst dateObj = new Date(year, month - 1, day);\nconst dow = dateObj.getDay(); // 0=domingo, 6=sabado\n\nif (dow === 0) {\n  return [{ json: { results: [{ toolCallId, result: 'El consultorio no atiende los domingos. Podés llamar de lunes a sábado.' }] } }];\n}\n\n// endMin: sabado=13:00=780, semana=21:00=1260\nconst endMin = dow === 6 ? 780 : 1260;\nconst allSlots = [];\nfor (let m = 480; m + 45 <= endMin; m += 45) {\n  allSlots.push(\n    String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')\n  );\n}\n\nconst busyStates = ['PENDIENTE', 'CONFIRMADO', 'RECORDATORIO_ENVIADO'];\nconst occupied = $input.all()\n  .filter(i => i.json.fecha === fecha && busyStates.includes(i.json.estado_turno))\n  .map(i => i.json.hora);\n\nconst free = allSlots.filter(s => !occupied.includes(s));\n\nconst result = free.length === 0\n  ? 'No hay turnos disponibles para el ' + fecha + '. ¿Querés que verifique otro día?'\n  : 'Los horarios disponibles para el ' + fecha + ' son: ' + free.join(', ') + '. ¿Cuál preferís?';\n\nreturn [{ json: { results: [{ toolCallId, result }] } }];"
+      }
+    },
+    {
+      "id": "a1a1a1a1-0001-0001-0001-a1a1a1a1a105",
+      "name": "Responder a Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Vapi Disponibilidad": {
+      "main": [
+        [{ "node": "Extraer Fecha y ID", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extraer Fecha y ID": {
+      "main": [
+        [{ "node": "Leer Turnos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Leer Turnos": {
+      "main": [
+        [{ "node": "Calcular Slots Libres", "type": "main", "index": 0 }]
+      ]
+    },
+    "Calcular Slots Libres": {
+      "main": [
+        [{ "node": "Responder a Vapi", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

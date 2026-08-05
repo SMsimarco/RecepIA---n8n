@@ -1,0 +1,76 @@
+{
+  "name": "Vapi - Obtener Fecha Hora",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-obtener-fecha",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "fcb42c6a-9be8-4a55-a7b9-be83f4d7270d",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [2864, 672],
+      "webhookId": "vapi-obtener-fecha-hora"
+    },
+    {
+      "parameters": {
+        "url": "https://recepia-landing-steel.vercel.app/api/fecha",
+        "options": {}
+      },
+      "id": "efdc91f2-79a5-4b3a-9e45-76ce40ab34b7",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3088, 672]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body ?? $('Webhook').first().json;\nconst toolCallId = body?.message?.toolCallList?.[0]?.id ?? 'tool-call-1';\nconst fecha = $input.first().json.result;\n\nreturn [{ json: { results: [{ toolCallId, result: fecha }] } }];"
+      },
+      "id": "40d8a36d-e236-4490-a0b1-d9324fed16a4",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3312, 672]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "3cbca2d2-98a3-4312-ba05-428943a24c36",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3536, 672]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "HTTP Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [{ "node": "Code", "type": "main", "index": 0 }]
+      ]
+    },
+    "Code": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "8QqdHtVZKF6jNDEX",
+  "tags": []
+}

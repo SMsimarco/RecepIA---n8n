@@ -1,0 +1,178 @@
+{
+  "name": "vapi-crear-turno",
+  "nodes": [
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b201",
+      "name": "Webhook Vapi Crear Turno",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-crear-turno",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b202",
+      "name": "Extraer Datos Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const toolCall = $input.first().json.body.message.toolCalls[0];\nconst args = toolCall.function.arguments;\nconst toolCallId = toolCall.id;\nconst nombre = args.nombre;\nconst fecha = args.fecha;\nconst hora = args.hora;\nconst servicio = args.servicio;\nconst telefono = args.telefono;\nconst turno_id = telefono + '_' + fecha;\nconst fechaHoy = new Date().toISOString().split('T')[0];\nreturn [{ json: { toolCallId, nombre, fecha, hora, servicio, telefono, turno_id, fechaHoy } }];"
+      }
+    },
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b203",
+      "name": "Guardar en Turnos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [680, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Turnos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "turno_id": "={{ $json.turno_id }}",
+            "telefono": "={{ $json.telefono }}",
+            "nombre": "={{ $json.nombre }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "servicio": "={{ $json.servicio }}",
+            "estado_turno": "CONFIRMADO"
+          },
+          "matchingColumns": ["turno_id"],
+          "schema": [
+            { "id": "turno_id", "displayName": "turno_id", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "nombre", "displayName": "nombre", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "fecha", "displayName": "fecha", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "hora", "displayName": "hora", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "servicio", "displayName": "servicio", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "estado_turno", "displayName": "estado_turno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b204",
+      "name": "Actualizar Paciente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [900, 300],
+      "alwaysOutputData": true,
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Pacientes",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Extraer Datos Turno').first().json.telefono }}",
+            "nombre": "={{ $('Extraer Datos Turno').first().json.nombre }}",
+            "proximoTurno": "={{ $('Extraer Datos Turno').first().json.fecha + ' ' + $('Extraer Datos Turno').first().json.hora }}",
+            "estado": "CONFIRMADO",
+            "fechaUltimoContacto": "={{ $('Extraer Datos Turno').first().json.fechaHoy }}"
+          },
+          "matchingColumns": ["telefono"],
+          "schema": [
+            { "id": "telefono", "displayName": "telefono", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "nombre", "displayName": "nombre", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "proximoTurno", "displayName": "proximoTurno", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "estado", "displayName": "estado", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "fechaUltimoContacto", "displayName": "fechaUltimoContacto", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b205",
+      "name": "Construir Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Extraer Datos Turno').first().json.toolCallId;\nconst nombre = $('Extraer Datos Turno').first().json.nombre;\nconst fecha = $('Extraer Datos Turno').first().json.fecha;\nconst hora = $('Extraer Datos Turno').first().json.hora;\n\nconst result = 'Turno creado correctamente para ' + nombre + ' el ' + fecha + ' a las ' + hora + '. ¡Nos vemos!';\n\nreturn [{ json: { results: [{ toolCallId, result }] } }];"
+      }
+    },
+    {
+      "id": "b2b2b2b2-0002-0002-0002-b2b2b2b2b206",
+      "name": "Responder a Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Vapi Crear Turno": {
+      "main": [
+        [{ "node": "Extraer Datos Turno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extraer Datos Turno": {
+      "main": [
+        [{ "node": "Guardar en Turnos", "type": "main", "index": 0 }]
+      ]
+    },
+    "Guardar en Turnos": {
+      "main": [
+        [{ "node": "Actualizar Paciente", "type": "main", "index": 0 }]
+      ]
+    },
+    "Actualizar Paciente": {
+      "main": [
+        [{ "node": "Construir Respuesta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Construir Respuesta": {
+      "main": [
+        [{ "node": "Responder a Vapi", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

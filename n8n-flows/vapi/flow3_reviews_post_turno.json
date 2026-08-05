@@ -1,0 +1,222 @@
+{
+  "name": "Flow 3 - Reviews Post-Turno",
+  "nodes": [
+    {
+      "id": "f3-cron",
+      "name": "Cron 20hs",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f3-sheets-read",
+      "name": "Leer Pacientes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "id": "f3-code-filter",
+      "name": "Filtrar CONFIRMADO de Hoy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst hoy = new Date().toISOString().split('T')[0];\n\nconst confirmados = items.filter(i => {\n  const estado = (i.json.estado || '').toUpperCase();\n  const proximoTurno = (i.json.proximoTurno || '').split(' ')[0];\n  return estado === 'CONFIRMADO' && proximoTurno === hoy;\n});\n\nif (confirmados.length === 0) return [];\n\nreturn confirmados.map(i => ({\n  json: {\n    telefono: i.json.telefono,\n    nombre: i.json.nombre || 'Paciente',\n    contentVariables: JSON.stringify({\n      \"1\": i.json.nombre || 'Paciente',\n      \"2\": \"Centro Médico San Martín\"\n    })\n  }\n}));"
+      }
+    },
+    {
+      "id": "f3-twilio-send",
+      "name": "Enviar Pedido de Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{ btoa($env.TWILIO_ACCOUNT_SID + ':' + $env.TWILIO_AUTH_TOKEN) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "name": "To",
+              "value": "=whatsapp:+{{ $json.telefono }}"
+            },
+            {
+              "name": "Body",
+              "value": "=Hola {{ $json.nombre }}! 😊 Esperamos que tu atención haya sido excelente hoy. ¿Cómo fue tu experiencia? Tu opinión nos ayuda mucho. ¡Gracias! 🙏"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f3-sheets-update",
+      "name": "Actualizar a ESPERANDO_REVIEW",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1vK8h8c8prheB8_KE7nwl6e4SblGoeALs_jE-vkgv5ho"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pacientes"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "telefono": "={{ $('Filtrar CONFIRMADO de Hoy').item.json.telefono }}",
+            "estado": "ESPERANDO_REVIEW",
+            "fechaUltimoContacto": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "telefono"
+          ],
+          "schema": [
+            {
+              "id": "telefono",
+              "displayName": "telefono",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "fechaUltimoContacto",
+              "displayName": "fechaUltimoContacto",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 20hs": {
+      "main": [
+        [
+          {
+            "node": "Leer Pacientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Pacientes": {
+      "main": [
+        [
+          {
+            "node": "Filtrar CONFIRMADO de Hoy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar CONFIRMADO de Hoy": {
+      "main": [
+        [
+          {
+            "node": "Enviar Pedido de Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Pedido de Review": {
+      "main": [
+        [
+          {
+            "node": "Actualizar a ESPERANDO_REVIEW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  }
+}
