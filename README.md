@@ -1,16 +1,18 @@
 # RecepIA — Recepcionista con IA para negocios con turnos
 
-Sistema de automatización WhatsApp con inteligencia artificial para cualquier negocio que trabaje con turnos: clínicas, barberías, canchas, consultorios, veterinarias.
+Sistema de automatización WhatsApp (y voz) con inteligencia artificial para negocios que trabajan con turnos: clínicas, barberías, canchas, consultorios, veterinarias.
+
+Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda/cancela/reprograma turnos, manda recordatorios y hace seguimiento — sin que el dueño del negocio tenga que responder mensajes.
 
 ---
 
 ## Qué hace
 
+- **Agente conversacional** — el paciente escribe como le sale ("necesito turno para el jueves a la tarde") y el agente pregunta lo que falta, agenda, cancela o reprograma solo
 - **Recordatorio automático** — el día anterior al turno le manda WhatsApp al cliente pidiendo confirmación
-- **Respuestas inteligentes** — Claude AI interpreta CONFIRMO / CANCELO / CAMBIAR y responde solo
-- **Reviews post-turno** — a las 20hs le pide opinión a quien confirmó y asistió. Si es positiva, manda el link de Google
-- **Reactivación** — todos los lunes le escribe a los pacientes que no vienen hace 90+ días
-- **Resumen semanal** — cada viernes a las 19hs el dueño recibe por WhatsApp las métricas de la semana
+- **Reviews post-turno** — después del turno le pide opinión a quien asistió. Si es positiva, manda el link de Google
+- **Multi-tenant** — un mismo flow atiende a varios negocios: cada cliente es una fila en una hoja de configuración (nombre, dirección, precios, tono, credenciales de Twilio)
+- **Canal de voz (opcional)** — los mismos tools (crear/cancelar turno, ver disponibilidad) están expuestos como webhooks para un agente de voz en Vapi.ai
 
 ---
 
@@ -18,10 +20,11 @@ Sistema de automatización WhatsApp con inteligencia artificial para cualquier n
 
 | Plan | Precio/mes | Incluye |
 |---|---|---|
-| **Básico** | $49 USD | Flows 1+2 · hasta 200 mensajes/mes |
-| **Pro** | $99 USD | Los 5 flows · mensajes ilimitados · resumen semanal · dashboard |
+| **Básico** | $49 USD | Recordatorios + respuestas del agente · hasta 200 mensajes/mes |
+| **Pro** | $99 USD | Todo lo anterior · mensajes ilimitados · reviews · resumen semanal |
 
 **Setup fee:** $150 USD único (instalación y configuración inicial)
+
 ---
 
 ## Stack técnico
@@ -29,112 +32,80 @@ Sistema de automatización WhatsApp con inteligencia artificial para cualquier n
 | Componente | Herramienta | Costo |
 |---|---|---|
 | Automatización | n8n en Contabo VPS | ~$7/mes |
-| WhatsApp API | 360Dialog | $10/mes + conversaciones |
+| WhatsApp API | Twilio | Pago por conversación |
 | Base de datos | Google Sheets | Gratis |
-| IA clasificación | Claude Haiku (Anthropic) | ~$0.001 por mensaje |
-| IA generación | Claude Sonnet (Anthropic) | ~$0.01 por reactivación |
-| Dashboard | Google Looker Studio | Gratis |
+| IA | Claude (Anthropic) — Haiku para clasificar, Sonnet para generar | ~$0.001-0.01 por mensaje |
+| Voz (opcional) | Vapi.ai + ElevenLabs | Pago por minuto |
 | Cobro | Stripe o MercadoPago | % por transacción |
 
 **Costo total por cliente:** ~$15-20 USD/mes → margen de $80+ por cliente Pro
 
 ---
 
-## Estructura del proyecto
+## Estructura del repo
 
 ```
-RecepIA/
-├── README.md                    ← este archivo
-├── n8n-flows/                   ← los 5 workflows para importar en n8n
-│   ├── flow1_recordatorio_diario.json
-│   ├── flow2_hub_central.json
-│   ├── flow3_reviews_post_turno.json
-│   ├── flow4_reactivacion.json
-│   └── flow5_resumen_semanal.json
-├── landing-page/                ← sitio web del producto (Next.js)
-├── onboarding/                  ← formulario y checklist de alta de clientes
-└── dashboard/                   ← template de Looker Studio
+RecepIA---n8n/
+├── README.md
+├── agente_demo.js                    ← demo de consola del agente (sin n8n, para probar la lógica)
+├── build_agente.js                   ← genera flow2_agente_configurable.json
+├── build_flow2.js                    ← genera la versión vieja (vapi/flow2_hub_central_v2.json)
+├── dashboard.html                    ← prototipo standalone de dashboard
+└── n8n-flows/
+    ├── flow2_agente_configurable.json   ← versión ACTUAL: hub central con AI Agent nativo de n8n, multi-tenant
+    ├── flow_error_handler.json          ← captura errores de cualquier flow y avisa
+    ├── tool_crear_turno.json            ← sub-workflow, tool del agente
+    ├── tool_cancelar_turno.json         ← sub-workflow, tool del agente
+    ├── tool_cambiar_turno.json          ← sub-workflow, tool del agente
+    ├── tool_ver_disponibilidad.json     ← sub-workflow, tool del agente
+    ├── tool_buscar_contexto.json        ← sub-workflow, tool del agente
+    └── vapi/
+        ├── flow1_recordatorio_diario.json    ← versión ANTERIOR (pre-agente), single-tenant, de referencia
+        ├── flow2_hub_central_v2.json         ← versión ANTERIOR, lógica de clasificación manual sin AI Agent
+        ├── flow3_reviews_post_turno.json     ← versión ANTERIOR
+        ├── flow_vapi_crear_turno.json        ← webhook para el agente de VOZ (Vapi.ai)
+        ├── flow_vapi_cancelar_turno.json     ← webhook para el agente de VOZ
+        ├── flow_vapi_disponibilidad.json     ← webhook para el agente de VOZ
+        └── flow_vapi_obtener_fecha.json      ← webhook para el agente de VOZ
 ```
+
+La versión que se usa hoy es `flow2_agente_configurable.json` + sus 5 tools + el error handler. La carpeta `vapi/` mezcla dos cosas distintas: los 3 flows viejos de WhatsApp (dejados de referencia) y los 4 webhooks que sí están en uso, pero para el canal de voz.
 
 ---
 
 ## Google Sheets — estructura requerida
 
-Cada cliente tiene su propio Google Sheet con dos hojas:
+Una hoja de cálculo con tres pestañas:
 
-### Hoja "Turnos"
+### "Configuracion" (multi-tenant: una fila por cliente)
+Incluye, por cliente: `clinicaId`, nombre, dirección, teléfono, horario, servicios y precios, tono del agente (system prompt), y credenciales de Twilio (`twilioFrom`, `twilioAuth`, `twilioUrl`) para poder atender varios negocios desde el mismo flow.
+
+### "Turnos"
 | turno_id | fecha | hora | nombre | telefono | servicio | estado_turno |
 |---|---|---|---|---|---|---|
 | 5491123_2026-04-10 | 2026-04-10 | 10:00 | Juan Pérez | 5491123456789 | Consulta | PENDIENTE |
 
 `estado_turno` posibles: `PENDIENTE` · `RECORDATORIO_ENVIADO` · `CONFIRMADO` · `CANCELADO`
 
-### Hoja "Pacientes"
+### "Pacientes"
 | telefono | nombre | ultimoTurno | proximoTurno | estado | fechaUltimoContacto | cantidadTurnos |
 |---|---|---|---|---|---|---|
 | 5491123456789 | Juan Pérez | 2026-01-15 | 2026-04-10 | CONFIRMADO | 2026-04-09T08:00:00Z | 4 |
 
-`estado` posibles: `RECORDATORIO_ENVIADO` · `CONFIRMADO` · `CANCELADO` · `ESPERANDO_REPROGRAMACION` · `CONSULTA_PENDIENTE` · `ESPERANDO_REVIEW` · `REVIEW_POSITIVO` · `REVIEW_NEGATIVO` · `REVIEW_NEUTRO` · `REACTIVACION_ENVIADA` · `INACTIVO`
-
 ---
 
-## Variables de entorno (Contabo VPS)
+## Variables de entorno
 
-Configurar en el archivo `.env` de n8n en el servidor, o desde la UI de n8n en Settings → Variables:
+Configurar en n8n (Settings → Variables) o en el `.env` del VPS:
 
 ```env
-# Clínica / negocio
-NOMBRE_CLINICA=Clínica Ejemplo
-DIRECCION_CLINICA=Av. Corrientes 1234, CABA
-TELEFONO_CLINICA=+54 9 11 1234-5678
-GOOGLE_MAPS_LINK=https://maps.google.com/?q=...
-GOOGLE_REVIEWS_LINK=https://g.page/r/.../review
-
-# WhatsApp — 360Dialog
-D360_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
-D360_WABA_URL=https://waba.360dialog.io/v1
-
-# Templates de WhatsApp (nombres exactos aprobados en 360Dialog)
-TEMPLATE_RECORDATORIO=recordatorio_turno
-TEMPLATE_REVIEW=solicitud_resena
-TEMPLATE_REACTIVACION=reactivacion_paciente
-
-# IA
 ANTHROPIC_API_KEY=sk-ant-...
-
-# Google Sheets
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
 SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms
-
-# Notificaciones al dueño
-OWNER_PHONE=5491123456789
 ```
 
----
-
-## Templates de WhatsApp — 360Dialog
-
-Crear estos 3 templates en el dashboard de 360Dialog antes de activar el sistema.
-
-### recordatorio_turno
-```
-Hola {{1}}, te recordamos tu turno de {{2}} el {{3}} a las {{4}} en {{5}}.
-Respondé *CONFIRMO* para confirmar o *CANCELO* para cancelar. 📅
-```
-Parámetros: nombre · servicio · fecha · hora · nombre_clinica
-
-### solicitud_resena
-```
-Hola {{1}}, ¿cómo estuvo tu visita a {{2}} hoy?
-Tu opinión nos ayuda a mejorar. Contanos cómo te fue 😊
-```
-Parámetros: nombre · nombre_clinica
-
-### reactivacion_paciente
-```
-Hola {{1}}, hace tiempo que no te vemos en {{2}} 👋
-Tu salud nos importa. ¿Agendamos un turno? Respondé este mensaje.
-```
-Parámetros: nombre · nombre_clinica
+Credenciales por cliente (Twilio) viven en la hoja "Configuracion", no en variables de entorno — así un mismo n8n atiende a varios negocios.
 
 ---
 
@@ -142,30 +113,11 @@ Parámetros: nombre · nombre_clinica
 
 **Tiempo estimado: 45 minutos**
 
-### Datos a recolectar (Google Form)
-- [ ] Nombre del negocio
-- [ ] Dirección
-- [ ] Teléfono
-- [ ] WhatsApp del dueño (para resumen semanal y alertas)
-- [ ] Link Google Maps
-- [ ] Link Google Reviews
-- [ ] Número de WhatsApp Business que van a usar
-- [ ] Email para acceso a Google Sheets
-
-### Setup técnico
-- [ ] Crear Google Sheet con las dos hojas (Turnos y Pacientes)
-- [ ] Compartir el Sheet con la cuenta de servicio de Google
-- [ ] Copiar el SHEET_ID de la URL
-- [ ] Crear cuenta 360Dialog para el cliente
-- [ ] Obtener D360_API_KEY y D360_WABA_URL
-- [ ] Configurar webhook en 360Dialog → URL del n8n del cliente
-- [ ] Crear los 3 templates en 360Dialog y esperar aprobación (~2hs)
-- [ ] Setear todas las variables de entorno en Railway
-- [ ] Importar los 5 flows en n8n
-- [ ] Vincular credenciales de Google Sheets y Google Calendar en cada flow
-- [ ] Activar los 5 workflows
-- [ ] Test manual: cargar un turno de prueba en Sheets y verificar que llegue el recordatorio
-- [ ] Compartir link de Looker Studio al dueño
+- [ ] Agregar fila del cliente en la hoja "Configuracion" (nombre, dirección, horario, servicios/precios, tono)
+- [ ] Crear/asignar número de WhatsApp Business en Twilio para el cliente
+- [ ] Configurar el webhook de Twilio → URL del flow en n8n
+- [ ] Test manual: escribirle al número y verificar que el agente responda y agende
+- [ ] Test de recordatorio: cargar un turno de prueba y verificar que llegue el WhatsApp
 - [ ] Enviar guía de uso al cliente
 
 ---
@@ -188,24 +140,21 @@ Parámetros: nombre · nombre_clinica
 ## Roadmap
 
 ### Ahora (MVP)
-- [x] 5 flows de n8n funcionales
-- [ ] Nombre y dominio
-- [ ] Landing page
+- [x] Agente conversacional multi-tenant funcionando (WhatsApp)
+- [x] Canal de voz vía Vapi.ai
+- [ ] Video demo
 - [ ] Primer cliente caso de éxito
-- [ ] Template de Looker Studio
 - [ ] Stripe/MercadoPago configurado
 
 ### Fase 2 (5-10 clientes)
-- [ ] Video demo
-- [ ] Testimonios en landing page
-- [ ] Automatizar parte del onboarding
+- [ ] Testimonios
+- [ ] Automatizar onboarding
 - [ ] Documentación para el cliente
 
 ### Fase 3 (10+ clientes)
-- [ ] Script de provisioning automático via n8n API
+- [ ] Script de provisioning automático vía n8n API
 - [ ] Portal de cliente self-service
-- [ ] Upwork / LinkedIn Ads
 
 ---
 
-*RecepIA — Automatización WhatsApp con IA para negocios con turnos*
+*RecepIA — Automatización WhatsApp y voz con IA para negocios con turnos*
