@@ -62,7 +62,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst hoy = new Date().toISOString().split('T')[0];\n\nconst confirmados = items.filter(i => {\n  const estado = (i.json.estado || '').toUpperCase();\n  const proximoTurno = (i.json.proximoTurno || '').split(' ')[0];\n  return estado === 'CONFIRMADO' && proximoTurno === hoy;\n});\n\nif (confirmados.length === 0) return [];\n\nreturn confirmados.map(i => ({\n  json: {\n    telefono: i.json.telefono,\n    nombre: i.json.nombre || 'Paciente',\n    contentVariables: JSON.stringify({\n      \"1\": i.json.nombre || 'Paciente',\n      \"2\": \"Centro Médico San Martín\"\n    })\n  }\n}));"
+        "jsCode": "const items = $input.all();\nconst hoy = new Date().toISOString().split('T')[0];\n\nconst confirmados = items.filter(i => {\n  const estado = (i.json.estado || '').toUpperCase();\n  const proximoTurno = (i.json.proximoTurno || '').split(' ')[0];\n  return estado === 'CONFIRMADO' && proximoTurno === hoy;\n});\n\nif (confirmados.length === 0) return [];\n\nreturn confirmados.map(i => ({\n  json: {\n    telefono: i.json.telefono,\n    nombre: i.json.nombre || 'Paciente',\n    contentVariables: JSON.stringify({\n      \"1\": i.json.nombre || 'Paciente',\n      \"2\": \"{{NOMBRE_CLINICA}}\"\n    })\n  }\n}));"
       }
     },
     {
