@@ -44,6 +44,28 @@ Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda
 
 ---
 
+## Arquitectura
+
+```mermaid
+sequenceDiagram
+    participant P as Paciente (WhatsApp)
+    participant T as Twilio
+    participant N as n8n (Hub Central + AI Agent)
+    participant C as Claude (Anthropic)
+    participant S as Google Sheets (Configuracion / Turnos / Pacientes)
+
+    P->>T: Mensaje de WhatsApp
+    T->>N: Webhook entrante
+    N->>S: Leer config del cliente + contexto del paciente
+    N->>C: Agente decide accion (tool calling)
+    C-->>N: Tool a ejecutar (crear/cancelar/ver disponibilidad)
+    N->>S: Escribir turno / actualizar estado
+    N->>T: Enviar respuesta
+    T->>P: Confirmacion por WhatsApp
+```
+
+---
+
 ## Estructura del repo
 
 ```
@@ -98,16 +120,15 @@ Incluye, por cliente: `clinicaId`, nombre, dirección, teléfono, horario, servi
 
 ## Variables de entorno
 
-Configurar en n8n (Settings → Variables) o en el `.env` del VPS:
+Ver [`.env.example`](.env.example). Configurar en n8n (Settings → Variables) o en el `.env` del VPS:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
-SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms
 ```
 
-Credenciales por cliente (Twilio) viven en la hoja "Configuracion", no en variables de entorno — así un mismo n8n atiende a varios negocios.
+El ID de la Google Sheet y las credenciales de Twilio por cliente viven hardcodeadas en cada nodo (versión de referencia) o en la hoja "Configuracion" (versión multi-tenant) — no son variables de entorno hoy.
 
 ---
 
