@@ -4,6 +4,8 @@ Sistema de automatización WhatsApp (y voz) con inteligencia artificial para neg
 
 Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda/cancela/reprograma turnos, manda recordatorios y hace seguimiento — sin que el dueño del negocio tenga que responder mensajes.
 
+![Demo conversación WhatsApp](screenRecepIA.png)
+
 ---
 
 ## Qué hace
