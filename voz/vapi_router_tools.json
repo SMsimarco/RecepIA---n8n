@@ -1,0 +1,349 @@
+{
+  "name": "Vapi - Router Tool Calls",
+  "nodes": [
+    {
+      "id": "vr-webhook",
+      "name": "Webhook Vapi Tools",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-tools-router",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "vapi-tools-router"
+    },
+    {
+      "id": "vr-if-secret",
+      "name": "Validar Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.headers['x-vapi-secret'] }}",
+              "rightValue": "={{ $env.VAPI_TOOLS_SECRET }}",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-respond-401",
+      "name": "Responder 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [440, 460],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"unauthorized\" } }}",
+        "options": { "responseCode": 401 }
+      }
+    },
+    {
+      "id": "vr-separar",
+      "name": "Separar Tool Calls",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 220],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const body = $('Webhook Vapi Tools').first().json.body;\nconst toolCalls = body?.message?.toolCalls || [];\nconst callerPhone = body?.message?.call?.customer?.number || body?.message?.customer?.number || '';\nreturn toolCalls.map(tc => ({\n  json: {\n    toolCallId: tc.id,\n    toolName: tc.function?.name || '',\n    args: tc.function?.arguments || {},\n    callerPhone\n  }\n}));"
+      }
+    },
+    {
+      "id": "vr-switch",
+      "name": "Rutear por Tool",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [660, 220],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [{ "leftValue": "={{ $json.toolName }}", "rightValue": "buscar_contexto", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "outputKey": "buscar_contexto"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [{ "leftValue": "={{ $json.toolName }}", "rightValue": "ver_disponibilidad", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "outputKey": "ver_disponibilidad"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [{ "leftValue": "={{ $json.toolName }}", "rightValue": "crear_turno", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "outputKey": "crear_turno"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [{ "leftValue": "={{ $json.toolName }}", "rightValue": "cambiar_turno", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "outputKey": "cambiar_turno"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [{ "leftValue": "={{ $json.toolName }}", "rightValue": "cancelar_turno", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "outputKey": "cancelar_turno"
+            }
+          ]
+        },
+        "fallbackOutput": "extra",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-prep-buscar",
+      "name": "Preparar Buscar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -160],
+      "parameters": {
+        "jsCode": "const { args, callerPhone, toolCallId } = $json;\nreturn [{ json: { telefono: args.telefono || callerPhone, toolCallId } }];"
+      }
+    },
+    {
+      "id": "vr-exec-buscar",
+      "name": "Exec Tool Buscar Contexto",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1100, -160],
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "list", "value": "", "cachedResultName": "Tool - Buscar Contexto Paciente" },
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-fmt-buscar",
+      "name": "Formatear Buscar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, -160],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Preparar Buscar Contexto').item.json.toolCallId;\nreturn [{ json: { toolCallId, result: $json.resultado } }];"
+      }
+    },
+    {
+      "id": "vr-prep-disponibilidad",
+      "name": "Preparar Ver Disponibilidad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 20],
+      "parameters": {
+        "jsCode": "const { args, toolCallId } = $json;\nreturn [{ json: { fecha: args.fecha, toolCallId } }];"
+      }
+    },
+    {
+      "id": "vr-exec-disponibilidad",
+      "name": "Exec Tool Ver Disponibilidad",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1100, 20],
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "list", "value": "", "cachedResultName": "Tool - Ver Disponibilidad" },
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-fmt-disponibilidad",
+      "name": "Formatear Ver Disponibilidad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 20],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Preparar Ver Disponibilidad').item.json.toolCallId;\nreturn [{ json: { toolCallId, result: $json.resultado } }];"
+      }
+    },
+    {
+      "id": "vr-prep-crear",
+      "name": "Preparar Crear Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 200],
+      "parameters": {
+        "jsCode": "const { args, callerPhone, toolCallId } = $json;\nreturn [{ json: { telefono: args.telefono || callerPhone, nombre: args.nombre, fecha: args.fecha, hora: args.hora, servicio: args.servicio, toolCallId } }];"
+      }
+    },
+    {
+      "id": "vr-exec-crear",
+      "name": "Exec Tool Crear Turno",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1100, 200],
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "list", "value": "", "cachedResultName": "Tool - Crear Turno" },
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-fmt-crear",
+      "name": "Formatear Crear Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 200],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Preparar Crear Turno').item.json.toolCallId;\nreturn [{ json: { toolCallId, result: $json.resultado } }];"
+      }
+    },
+    {
+      "id": "vr-prep-cambiar",
+      "name": "Preparar Cambiar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 380],
+      "parameters": {
+        "jsCode": "const { args, callerPhone, toolCallId } = $json;\nreturn [{ json: { telefono: args.telefono || callerPhone, fecha_actual: args.fecha_actual, fecha_nueva: args.fecha_nueva, hora_nueva: args.hora_nueva, nombre: args.nombre, servicio: args.servicio, toolCallId } }];"
+      }
+    },
+    {
+      "id": "vr-exec-cambiar",
+      "name": "Exec Tool Cambiar Turno",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1100, 380],
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "list", "value": "", "cachedResultName": "Tool - Cambiar Turno" },
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-fmt-cambiar",
+      "name": "Formatear Cambiar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 380],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Preparar Cambiar Turno').item.json.toolCallId;\nreturn [{ json: { toolCallId, result: $json.resultado } }];"
+      }
+    },
+    {
+      "id": "vr-prep-cancelar",
+      "name": "Preparar Cancelar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 560],
+      "parameters": {
+        "jsCode": "const { args, callerPhone, toolCallId } = $json;\nreturn [{ json: { telefono: args.telefono || callerPhone, fecha: args.fecha, nombre: args.nombre, toolCallId } }];"
+      }
+    },
+    {
+      "id": "vr-exec-cancelar",
+      "name": "Exec Tool Cancelar Turno",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1100, 560],
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "list", "value": "", "cachedResultName": "Tool - Cancelar Turno" },
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "vr-fmt-cancelar",
+      "name": "Formatear Cancelar Turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 560],
+      "parameters": {
+        "jsCode": "const toolCallId = $('Preparar Cancelar Turno').item.json.toolCallId;\nreturn [{ json: { toolCallId, result: $json.resultado } }];"
+      }
+    },
+    {
+      "id": "vr-fmt-desconocida",
+      "name": "Formatear Tool Desconocida",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 740],
+      "parameters": {
+        "jsCode": "const { toolCallId, toolName } = $json;\nreturn [{ json: { toolCallId, result: 'ERROR: tool desconocida (' + toolName + ')' } }];"
+      }
+    },
+    {
+      "id": "vr-construir-respuesta",
+      "name": "Construir Respuesta Vapi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 220],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { results: $input.all().map(i => ({ toolCallId: i.json.toolCallId, result: i.json.result })) } }];"
+      }
+    },
+    {
+      "id": "vr-respond-ok",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1760, 220],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Vapi Tools": { "main": [[{ "node": "Validar Secret", "type": "main", "index": 0 }]] },
+    "Validar Secret": {
+      "main": [
+        [{ "node": "Separar Tool Calls", "type": "main", "index": 0 }],
+        [{ "node": "Responder 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Separar Tool Calls": { "main": [[{ "node": "Rutear por Tool", "type": "main", "index": 0 }]] },
+    "Rutear por Tool": {
+      "main": [
+        [{ "node": "Preparar Buscar Contexto", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Ver Disponibilidad", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Crear Turno", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Cambiar Turno", "type": "main", "index": 0 }],
+        [{ "node": "Preparar Cancelar Turno", "type": "main", "index": 0 }],
+        [{ "node": "Formatear Tool Desconocida", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Buscar Contexto": { "main": [[{ "node": "Exec Tool Buscar Contexto", "type": "main", "index": 0 }]] },
+    "Exec Tool Buscar Contexto": { "main": [[{ "node": "Formatear Buscar Contexto", "type": "main", "index": 0 }]] },
+    "Formatear Buscar Contexto": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Preparar Ver Disponibilidad": { "main": [[{ "node": "Exec Tool Ver Disponibilidad", "type": "main", "index": 0 }]] },
+    "Exec Tool Ver Disponibilidad": { "main": [[{ "node": "Formatear Ver Disponibilidad", "type": "main", "index": 0 }]] },
+    "Formatear Ver Disponibilidad": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Preparar Crear Turno": { "main": [[{ "node": "Exec Tool Crear Turno", "type": "main", "index": 0 }]] },
+    "Exec Tool Crear Turno": { "main": [[{ "node": "Formatear Crear Turno", "type": "main", "index": 0 }]] },
+    "Formatear Crear Turno": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Preparar Cambiar Turno": { "main": [[{ "node": "Exec Tool Cambiar Turno", "type": "main", "index": 0 }]] },
+    "Exec Tool Cambiar Turno": { "main": [[{ "node": "Formatear Cambiar Turno", "type": "main", "index": 0 }]] },
+    "Formatear Cambiar Turno": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Preparar Cancelar Turno": { "main": [[{ "node": "Exec Tool Cancelar Turno", "type": "main", "index": 0 }]] },
+    "Exec Tool Cancelar Turno": { "main": [[{ "node": "Formatear Cancelar Turno", "type": "main", "index": 0 }]] },
+    "Formatear Cancelar Turno": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Formatear Tool Desconocida": { "main": [[{ "node": "Construir Respuesta Vapi", "type": "main", "index": 0 }]] },
+    "Construir Respuesta Vapi": { "main": [[{ "node": "Responder 200", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
