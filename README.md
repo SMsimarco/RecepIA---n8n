@@ -35,7 +35,8 @@ Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda
 |---|---|---|
 | Automatización | n8n en Contabo VPS | ~$7/mes |
 | WhatsApp API | Twilio | Pago por conversación |
-| Base de datos | Google Sheets | Gratis |
+| Base de datos (config/turnos/pacientes) | Google Sheets | Gratis |
+| Base de datos (historial conversación) | Supabase (tabla `conversaciones`, compartida entre clínicas vía `clinica_id`) | Gratis (free tier) |
 | IA | Claude (Anthropic) — Haiku para clasificar, Sonnet para generar | ~$0.001-0.01 por mensaje |
 | Voz (opcional) | Vapi.ai + ElevenLabs | Pago por minuto |
 | Cobro | Stripe o MercadoPago | % por transacción |
@@ -102,7 +103,11 @@ La versión que se usa hoy es `flow2_agente_configurable.json` + sus 5 tools + e
 Una hoja de cálculo con tres pestañas:
 
 ### "Configuracion" (multi-tenant: una fila por cliente)
-Incluye, por cliente: `clinicaId`, nombre, dirección, teléfono, horario, servicios y precios, tono del agente (system prompt), y credenciales de Twilio (`twilioFrom`, `twilioAuth`, `twilioUrl`) para poder atender varios negocios desde el mismo flow.
+Columnas reales (ver `config_clinica.csv`): `sheet_id`, `clinica_id`, `nombre_clinica`, `tipo_clinica`, `ciudad`, `pais`, `direccion`, `telefono_urgencias`, `telefono_admin`, `horario`, `servicios`, `obras_sociales`, `metodos_pago`, `twilio_from`, `twilio_account_sid`, `twilio_auth_token`, `supabase_url`, `supabase_key`.
+
+El nodo `Construir Prompt` arma en runtime `twilioUrl` y `twilioAuth` (Basic Auth en base64) a partir de `twilio_account_sid` + `twilio_auth_token` — esos dos campos derivados NO están en la hoja, solo existen en memoria durante la ejecución.
+
+`supabase_url` / `supabase_key` son los mismos para todas las filas (un solo proyecto Supabase compartido, particionado por `clinica_id`), no son credenciales por cliente.
 
 ### "Turnos"
 | turno_id | fecha | hora | nombre | telefono | servicio | estado_turno |
@@ -131,6 +136,19 @@ TWILIO_AUTH_TOKEN=...
 El ID de la Google Sheet y las credenciales de Twilio por cliente viven hardcodeadas en cada nodo (versión de referencia) o en la hoja "Configuracion" (versión multi-tenant) — no son variables de entorno hoy.
 
 ---
+
+## Manejo de errores
+
+Dos capas, ambas mandan WhatsApp al paciente ("tuvimos un problema técnico") + aviso al admin del negocio:
+
+- **Errores del agente** (Claude no responde / responde vacío): `Verificar Error Agente` → `Avisar Error a Paciente` → `Preparar Alerta Admin` → `Avisar Error a Admin`. Usa las credenciales Twilio del cliente ya cargadas.
+- **Errores tempranos** (`Leer Configuracion`, `Descargar Audio`, `Transcribir Groq`, `Buscar Paciente`, `Leer Historial Supabase`, `Guardar en Supabase` fallan con `onError: continueErrorOutput`): `Preparar Error Temprano` → `IF Hay Telefono Paciente` → (`Avisar Error a Paciente Temprano` si hay creds de cliente) → `Preparar Alerta Admin Temprano` → reusa `Avisar Error a Admin`.
+  - Caso límite: si **`Leer Configuracion` es el que falla**, no hay credenciales Twilio del cliente todavía → no se le puede avisar al paciente, solo al admin, usando un fallback sandbox: `$vars.TWILIO_SANDBOX_SID` / `$vars.TWILIO_SANDBOX_AUTH_TOKEN` (configurar en n8n → Settings → Variables) + número fijo `5492494621486`.
+  - **Sin confirmar todavía:** esta instancia de n8n bloquea `$env` dentro de nodos Code (confirmado); `$vars` no se probó aún. Verificar en el test de "fallo forzado".
+
+## Config DEMO
+
+Fila `demo-clinica-dental` en `config_clinica.csv` / tab "Configuracion": clínica ficticia "Clínica Dental Demo", número Twilio sandbox `+14155238886`, admin = tu número personal. Usar esta fila (no la de Centro Médico San Martín) para mostrar el agente en vivo sin tocar datos de cliente real.
 
 ## Checklist de alta de cliente nuevo
 
