@@ -16,18 +16,7 @@ Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda
 - **Multi-tenant** — un mismo flow atiende a varios negocios: cada cliente es una fila en una hoja de configuración (nombre, dirección, precios, tono, credenciales de Twilio)
 - **Canal de voz (opcional)** — los mismos tools (crear/cancelar turno, ver disponibilidad) están expuestos como webhooks para un agente de voz en Vapi.ai
 
----
-
-## Modelo de negocio
-
-| Plan | Precio/mes | Incluye |
-|---|---|---|
-| **Básico** | $49 USD | Recordatorios + respuestas del agente · hasta 200 mensajes/mes |
-| **Pro** | $99 USD | Todo lo anterior · mensajes ilimitados · reviews · resumen semanal |
-
-**Setup fee:** $150 USD único (instalación y configuración inicial)
-
----
+--
 
 ## Stack técnico
 
@@ -40,10 +29,6 @@ Un agente de IA (Claude) atiende por WhatsApp, entiende lenguaje natural, agenda
 | IA | Claude (Anthropic) — Haiku para clasificar, Sonnet para generar | ~$0.001-0.01 por mensaje |
 | Voz (opcional) | Vapi.ai + ElevenLabs | Pago por minuto |
 | Cobro | Stripe o MercadoPago | % por transacción |
-
-**Costo total por cliente:** ~$15-20 USD/mes → margen de $80+ por cliente Pro
-
----
 
 ## Arquitectura
 
@@ -178,24 +163,5 @@ Fila `demo-clinica-dental` en `config_clinica.csv` / tab "Configuracion": clíni
 
 ---
 
-## Roadmap
-
-### Ahora (MVP)
-- [x] Agente conversacional multi-tenant funcionando (WhatsApp)
-- [x] Canal de voz vía Vapi.ai
-- [ ] Video demo
-- [ ] Primer cliente caso de éxito
-- [ ] Stripe/MercadoPago configurado
-
-### Fase 2 (5-10 clientes)
-- [ ] Testimonios
-- [ ] Automatizar onboarding
-- [ ] Documentación para el cliente
-
-### Fase 3 (10+ clientes)
-- [ ] Script de provisioning automático vía n8n API
-- [ ] Portal de cliente self-service
-
----
 
 *RecepIA — Automatización WhatsApp y voz con IA para negocios con turnos*
